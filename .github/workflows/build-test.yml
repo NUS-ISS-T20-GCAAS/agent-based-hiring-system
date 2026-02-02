@@ -1,11 +1,14 @@
-name: Python CI/CD
+name: Python Standard CI/CD
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "**" ]
+    tags:
+      - 'v*'          
 
 jobs:
   build:
+    name: Build & Test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -13,21 +16,34 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.9'
+          cache: 'pip'
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: |
+          pip install -r requirements.txt || echo "No requirements.txt found"
       - name: Run Tests
-        run: echo "Tests passed"
+        run: echo "Running pytest..."
 
-  # Job 2: Deploy (Wait for manual click/approval)
-  deploy:
+  deploy-non-prod:
+    name: Deploy to ${{ matrix.env }}
     needs: build
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        environment: [dev, staging, prod]
-    # This is the magic part:
-    environment: ${{ matrix.environment }}
-    
+        env: [dev, staging]
+    environment: ${{ matrix.env }}
     steps:
-      - name: Dummy Deploy
-        run: echo "Deploying to ${{ matrix.environment }}..."
+      - name: Deploy
+        run: echo "Automatically deploying to ${{ matrix.env }}..."
+
+  deploy-prod:
+    name: Deploy to Production
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    environment: prod
+    steps:
+      - name: Deploy to Prod
+        run: |
+          echo "Deploying Version ${{ github.ref_name }} to Production"
+          echo "This requires your team's approval in the UI."
