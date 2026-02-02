@@ -1,8 +1,11 @@
 [tool.poetry]
 name = "agentic-hiring-system"
 version = "0.1.0"
-description = ""
+description = "Agentic Hiring System"
 authors = ["Team 20"]
+packages = [
+    { include = "agentic_hiring_system" }  # your source code folder
+]
 
 [tool.poetry.dependencies]
 python = "^3.11"
@@ -17,3 +20,7 @@ pdfplumber = "^0.11.0"
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0.0"
 ruff = "^0.2.0"
+
+[build-system]
+requires = ["poetry-core>=1.5.0"]
+build-backend = "poetry.core.masonry.api"
