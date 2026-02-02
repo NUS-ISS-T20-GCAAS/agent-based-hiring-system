@@ -1,0 +1,53 @@
+name: Python CI/CD - Deploy
+
+on:
+  workflow_dispatch:   # Only manual trigger
+
+jobs:
+  deploy-dev:
+    runs-on: ubuntu-latest
+    environment:
+      name: dev
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: ./dist
+      - name: Dummy Deploy
+        run: |
+          echo "Deploying to DEV (dummy)..."
+          ls ./dist
+          echo "This is a placeholder deployment."
+
+  deploy-staging:
+    runs-on: ubuntu-latest
+    environment:
+      name: staging
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: ./dist
+      - name: Dummy Deploy
+        run: |
+          echo "Deploying to STAGING (dummy)..."
+          ls ./dist
+          echo "This is a placeholder deployment."
+
+  deploy-prod:
+    runs-on: ubuntu-latest
+    environment:
+      name: prod
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: ./dist
+      - name: Dummy Deploy
+        run: |
+          echo "Deploying to PROD (dummy)..."
+          ls ./dist
+          echo "This is a placeholder deployment."
