@@ -1,5 +1,6 @@
 name: Python CI/CD
 
+# Trigger build automatically on push/PR
 on:
   push:
     branches:
@@ -7,13 +8,14 @@ on:
   pull_request:
     branches:
       - main
+  workflow_dispatch:  # Allows manual triggering too
 
 jobs:
   build:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: [3.11]  # single version to simplify
+        python-version: [3.11]
 
     steps:
       - name: Checkout code
@@ -29,15 +31,19 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      # skipping tests for now as there are none
+      # skip test first 
       # - name: Run tests
       #   run: |
       #     pytest
 
-      - name: Build artifact (dummy)
+      - name: Build Docker image
+        run: |
+          docker build -t agentic-hiring-system:dev .
+
+      - name: Build artifact
         run: |
           mkdir -p dist
-          echo "dummy package" > dist/placeholder.txt
+          echo "docker image placeholder" > dist/placeholder.txt
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -45,11 +51,15 @@ jobs:
           name: dist
           path: dist/
 
+  # -----------------------
+  # Deploy to Dev (manual)
+  # -----------------------
   deploy-dev:
     runs-on: ubuntu-latest
     needs: build
     environment:
       name: dev
+    if: github.event_name == 'workflow_dispatch'  # only manual trigger
     steps:
       - uses: actions/checkout@v3
       - uses: actions/download-artifact@v4
@@ -59,5 +69,47 @@ jobs:
       - name: Dummy Deploy
         run: |
           echo "Deploying to DEV (dummy)..."
+          ls ./dist
+          echo "This is a placeholder deployment."
+
+  # -----------------------
+  # Deploy to Staging (manual)
+  # -----------------------
+  deploy-staging:
+    runs-on: ubuntu-latest
+    needs: build
+    environment:
+      name: staging
+    if: github.event_name == 'workflow_dispatch'  # only manual trigger
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: ./dist
+      - name: Dummy Deploy
+        run: |
+          echo "Deploying to STAGING (dummy)..."
+          ls ./dist
+          echo "This is a placeholder deployment."
+
+  # -----------------------
+  # Deploy to Prod (manual)
+  # -----------------------
+  deploy-prod:
+    runs-on: ubuntu-latest
+    needs: build
+    environment:
+      name: prod
+    if: github.event_name == 'workflow_dispatch'  # only manual trigger
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: ./dist
+      - name: Dummy Deploy
+        run: |
+          echo "Deploying to PROD (dummy)..."
           ls ./dist
           echo "This is a placeholder deployment."
