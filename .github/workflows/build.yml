@@ -4,20 +4,25 @@ on:
   push:
     branches: [ main ]
   pull_request:
+  workflow_dispatch:
+    inputs:
+      services:
+        description: 'Comma-separated list of services to build (e.g., coordinator-agent,resume-intake-agent)'
+        required: true
+        default: 'coordinator-agent,resume-intake-agent'
 
 jobs:
   detect-changes:
     runs-on: ubuntu-latest
     outputs:
-      services: ${{ steps.filter.outputs.changes }}
-      has_changes: ${{ steps.filter.outputs.changes != '[]' }}
+      services: ${{ steps.services.outputs.services }}
     steps:
       - uses: actions/checkout@v4
 
       - uses: dorny/paths-filter@v3
         id: filter
+        if: github.event_name != 'workflow_dispatch'
         with:
-          list-files: json
           filters: |
             coordinator-agent:
               - services/coordinator-agent/**
@@ -29,6 +34,18 @@ jobs:
               - services/ranking-agent/**
             audit-agent:
               - services/audit-agent/**
+
+      - name: Set services
+        id: services
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            # Split the input services and format as JSON array
+            SERVICES="${{ github.event.inputs.services }}"
+            JSON_SERVICES=$(echo "$SERVICES" | sed 's/,/","/g' | sed 's/^/["/' | sed 's/$/"]/')
+            echo "services=$JSON_SERVICES" >> $GITHUB_OUTPUT
+          else
+            echo "services=${{ steps.filter.outputs.changes }}" >> $GITHUB_OUTPUT
+          fi
 
   build:
     needs: detect-changes

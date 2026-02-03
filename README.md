@@ -49,3 +49,7 @@ Or using make:
 ```bash
 make up
 ```
+
+### GitHub Actions
+- **Automatic Builds**: On push/PR, only builds services that have changed files.
+- **Manual Builds**: Go to the Actions tab, select "Build Services" or "Build Frontend", click "Run workflow", and specify which services to build (for services workflow).
