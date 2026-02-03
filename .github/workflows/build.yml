@@ -10,11 +10,14 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       services: ${{ steps.filter.outputs.changes }}
+      has_changes: ${{ steps.filter.outputs.changes != '[]' }}
     steps:
       - uses: actions/checkout@v4
+
       - uses: dorny/paths-filter@v3
         id: filter
         with:
+          list-files: json
           filters: |
             coordinator-agent:
               - services/coordinator-agent/**
@@ -29,6 +32,7 @@ jobs:
 
   build:
     needs: detect-changes
+    if: needs.detect-changes.outputs.has_changes == 'true'
     runs-on: ubuntu-latest
     strategy:
       matrix:
