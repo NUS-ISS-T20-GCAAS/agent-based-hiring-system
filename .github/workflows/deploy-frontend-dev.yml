@@ -1,0 +1,16 @@
+name: Deploy Frontend Dev
+
+on:
+  workflow_run:
+    workflows: ["Build Frontend"]
+    types: [completed]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy
+        run: |
+          docker pull ghcr.io/${{ github.repository }}/frontend:${{ github.sha }}
+          docker run -d -p 3000:3000 \
+            ghcr.io/${{ github.repository }}/frontend:${{ github.sha }}

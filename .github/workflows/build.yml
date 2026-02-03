@@ -1,0 +1,48 @@
+name: Build Services
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      services: ${{ steps.filter.outputs.changes }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            coordinator-agent:
+              - services/coordinator-agent/**
+            resume-intake-agent:
+              - services/resume-intake-agent/**
+            screening-agent:
+              - services/screening-agent/**
+            ranking-agent:
+              - services/ranking-agent/**
+            audit-agent:
+              - services/audit-agent/**
+
+  build:
+    needs: detect-changes
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: ${{ fromJson(needs.detect-changes.outputs.services) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: |
+          docker build \
+            -t ghcr.io/${{ github.repository }}/${{ matrix.service }}:${{ github.sha }} \
+            services/${{ matrix.service }}
+
+      - name: Push image
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+          docker push ghcr.io/${{ github.repository }}/${{ matrix.service }}:${{ github.sha }}

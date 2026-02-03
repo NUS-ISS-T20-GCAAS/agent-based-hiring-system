@@ -22,5 +22,30 @@ An agent-based, explainable resume screening system built for scalable and audit
 - Anonymized real-world resumes
 
 ## Local Development
+### Build Services Individually
+You can build each service separately:
+
 ```bash
-docker compose up --build
+# Build all services
+make build-all
+
+# Or build individual services
+make build-frontend
+make build-coordinator
+make build-resume
+
+# Using docker-compose
+make compose-build-all
+make compose-build-frontend
+# etc.
+```
+
+### Run the System
+```bash
+docker-compose -f infra/docker-compose.yml up --build
+```
+
+Or using make:
+```bash
+make up
+```
