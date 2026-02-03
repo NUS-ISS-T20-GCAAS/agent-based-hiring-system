@@ -15,7 +15,7 @@ services:
       context: ../services/coordinator-agent
       dockerfile: Dockerfile
     ports:
-      - "8080:8080"
+      - "8000:8000"
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
     depends_on:
@@ -26,7 +26,7 @@ services:
       context: ../services/resume-intake-agent
       dockerfile: Dockerfile
     ports:
-      - "8081:8080"  # Assuming similar port
+      - "8001:8000"  # Assuming similar port
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
     depends_on:

@@ -1,0 +1,2 @@
+RESUME_INTAKE_AGENT_URL = "http://resume-intake:8000/run"
+REQUEST_TIMEOUT = 30

@@ -1,8 +1,12 @@
 from pydantic import BaseModel
-from typing import List, Optional, Dict, Any
+from typing import Optional, Dict, Any
 
-class CoordinateRequest(BaseModel):
-    candidate_data: Dict[str, Any]  # structured resume data
-    job_id: str                      # the target job identifier
-    tasks: Optional[List[str]] = None  # list of agent tasks to run
-    metadata: Optional[Dict[str, Any]] = None  # optional info like timestamps, requestor, etc.
+class JobRequest(BaseModel):
+    job_id: str
+    resume_url: str
+    job_description: str
+
+class JobResponse(BaseModel):
+    job_id: str
+    status: str
+    result: Optional[Dict[str, Any]] = None
