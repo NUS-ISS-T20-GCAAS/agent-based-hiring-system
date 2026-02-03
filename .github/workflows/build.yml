@@ -15,14 +15,19 @@ jobs:
   detect-changes:
     runs-on: ubuntu-latest
     outputs:
-      services: ${{ steps.services.outputs.services }}
-    steps:
-      - uses: actions/checkout@v4
+      services: ${{ steps.set-services.outputs.services }}
 
-      - uses: dorny/paths-filter@v3
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Detect changed services (push / PR only)
+      - name: Detect service changes
+        uses: dorny/paths-filter@v3
         id: filter
         if: github.event_name != 'workflow_dispatch'
         with:
+          list-files: json
           filters: |
             coordinator-agent:
               - services/coordinator-agent/**
@@ -35,31 +40,56 @@ jobs:
             audit-agent:
               - services/audit-agent/**
 
-      - name: Set services
-        id: services
+      # Decide final service list (SINGLE source of truth)
+      - name: Set services list
+        id: set-services
+        shell: bash
         run: |
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            # Split the input services and format as JSON array
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             SERVICES="${{ github.event.inputs.services }}"
-            JSON_SERVICES=$(echo "$SERVICES" | sed 's/,/","/g' | sed 's/^/["/' | sed 's/$/"]/')
-            echo "services=$JSON_SERVICES" >> $GITHUB_OUTPUT
+
+            if [ -z "$SERVICES" ]; then
+              echo "❌ No services provided"
+              exit 1
+            fi
+
+            JSON=$(printf '["%s"]' "${SERVICES//,/\",\"}")
+            echo "services=$JSON" >> $GITHUB_OUTPUT
+
           else
-            echo "services=${{ steps.filter.outputs.changes }}" >> $GITHUB_OUTPUT
+            SERVICES='${{ steps.filter.outputs.changes }}'
+
+            if [ "$SERVICES" = "[]" ] || [ -z "$SERVICES" ]; then
+              echo "services=[]" >> $GITHUB_OUTPUT
+            else
+              echo "services=$SERVICES" >> $GITHUB_OUTPUT
+            fi
           fi
+
+      - name: Debug services
+        run: |
+          echo "Services to build: ${{ steps.set-services.outputs.services }}"
 
   build:
     needs: detect-changes
-    if: needs.detect-changes.outputs.has_changes == 'true'
+    if: needs.detect-changes.outputs.services != '[]'
     runs-on: ubuntu-latest
+
     strategy:
       matrix:
         service: ${{ fromJson(needs.detect-changes.outputs.services) }}
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Set lowercase repository name
         run: |
           echo "REPO_LOWER=$(echo ${{ github.repository }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+
+      - name: Log build target
+        run: |
+          echo "Building service: ${{ matrix.service }}"
 
       - name: Build Docker image
         run: |
@@ -67,7 +97,11 @@ jobs:
             -t ghcr.io/${{ env.REPO_LOWER }}/${{ matrix.service }}:${{ github.sha }} \
             services/${{ matrix.service }}
 
-      - name: Push image
+      - name: Login to GHCR
         run: |
-          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io \
+            -u ${{ github.actor }} --password-stdin
+
+      - name: Push Docker image
+        run: |
           docker push ghcr.io/${{ env.REPO_LOWER }}/${{ matrix.service }}:${{ github.sha }}
