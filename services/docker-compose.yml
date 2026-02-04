@@ -5,7 +5,7 @@ services:
       - "8001:8000"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 5s
+      interval: 60s
       timeout: 2s
       retries: 5
 
@@ -16,3 +16,14 @@ services:
     depends_on:
       resume-intake:
         condition: service_healthy
+
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: hiring_system
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5432:5432"
+    volumes:
+      - ../db/init_db.sql:/docker-entrypoint-initdb.d/init_db.sql      
