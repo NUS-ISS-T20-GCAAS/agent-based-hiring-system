@@ -53,3 +53,9 @@ make up
 ### GitHub Actions
 - **Automatic Builds**: On push/PR, only builds services that have changed files.
 - **Manual Builds**: Go to the Actions tab, select "Build Services" or "Build Frontend", click "Run workflow", and specify which services to build (for services workflow).
+
+
+## To generate tree folder cmd
+``` sh
+tree -L 3 --gitignore # may need to install 
+```
