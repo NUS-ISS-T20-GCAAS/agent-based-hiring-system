@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any
 
 class JobRequest(BaseModel):
@@ -6,7 +6,27 @@ class JobRequest(BaseModel):
     resume_url: str
     job_description: str
 
+class RunRequest(BaseModel):
+    entity_id: str
+    correlation_id: str
+    input_data: Dict[str, Any]
+
+class Artifact(BaseModel):
+    artifact_id: str
+    entity_id: str
+    correlation_id: str
+    agent_id: str
+    agent_type: str
+    agent_type: str
+    artifact_type: str
+    payload: Any = None
+    confidence: float = Field(ge=0.0, le=1.0)
+    explanation: str
+    created_at: str
+    version: int = 1
+
 class JobResponse(BaseModel):
     job_id: str
     status: str
-    result: Optional[Dict[str, Any]] = None
+    artifact_id: str
+    correlation_id: str

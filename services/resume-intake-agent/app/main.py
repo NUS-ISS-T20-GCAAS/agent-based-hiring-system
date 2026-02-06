@@ -1,18 +1,27 @@
 from fastapi import FastAPI
-from app.schemas import IntakeRequest, IntakeResponse
-from app.worker import process_resume
+from app.agent import ResumeIntakeAgent
+from app.shared_memory import SharedMemory
+from app.schemas import RunRequest, Artifact
+from typing import List
 
-app = FastAPI(title="Resume Intake Agent")
+app = FastAPI()
 
-@app.post("/run", response_model=IntakeResponse)
-def run(request: IntakeRequest):
-    parsed = process_resume(request.payload)
-    return IntakeResponse(
-        job_id=request.job_id,
-        status="success",
-        output={"parsed_resume": parsed}
+shared_memory = SharedMemory()
+agent = ResumeIntakeAgent(agent_type="resume_intake", shared_memory=shared_memory)
+
+@app.post("/run", response_model=Artifact)
+def run_agent(req: RunRequest):
+    artifact = agent.run(
+        entity_id=req.entity_id,
+        correlation_id=req.correlation_id,
+        input_data=req.input_data,
     )
+    return artifact
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "resume-intake"}
+    return {"status": "ok"}
+
+@app.get("/artifacts/{entity_id}", response_model=List[Artifact])
+def get_artifacts(entity_id: str):
+    return shared_memory.get_by_entity(entity_id)

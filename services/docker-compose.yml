@@ -1,5 +1,5 @@
 services:
-  resume-intake:
+  resume-intake-agent:
     build: ./resume-intake-agent
     ports:
       - "8001:8000"
@@ -26,4 +26,4 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - ../db/init_db.sql:/docker-entrypoint-initdb.d/init_db.sql      
+      - ../db/init_db.sql:/docker-entrypoint-initdb.d/init_db.sql
