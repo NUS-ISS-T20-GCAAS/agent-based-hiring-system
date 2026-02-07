@@ -8,17 +8,11 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     steps:
       - name: Deploy
-        env:
-          REPO_LOWER: ${{ github.repository }}
         run: |
-          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-          
-          REPO_LOWER=${REPO_LOWER,,}  # Bash built-in lowercase conversion
-          echo "Lowercase repo: ${REPO_LOWER}"
-          
-          docker pull ghcr.io/${REPO_LOWER}/frontend:${{ github.event.workflow_run.head_sha }}
+          REPO_LOWER=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+
+          docker pull ghcr.io/${REPO_LOWER}/frontend:${{ github.sha }}
           docker run -d -p 3000:3000 \
-            ghcr.io/${REPO_LOWER}/frontend:${{ github.event.workflow_run.head_sha }}
+            ghcr.io/${REPO_LOWER}/frontend:${{ github.sha }}
