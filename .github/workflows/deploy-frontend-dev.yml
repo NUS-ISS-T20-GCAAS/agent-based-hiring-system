@@ -13,6 +13,6 @@ jobs:
         run: |
           REPO_LOWER=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
 
-          docker pull ghcr.io/${ REPO_LOWER }/frontend:${{ github.sha }}
+          docker pull ghcr.io/${REPO_LOWER}/frontend:${{ github.sha }}
           docker run -d -p 3000:3000 \
-            ghcr.io/${ REPO_LOWER }/frontend:${{ github.sha }}
+            ghcr.io/${REPO_LOWER}/frontend:${{ github.sha }}
