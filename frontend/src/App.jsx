@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Activity, BarChart3, Users, Clock } from 'lucide-react';
-import Dashboard from './components/Dashboard';
-import Candidates from './components/Candidates';
-import AgentActivity from './components/AgentActivity';
-import CandidateDetailModal from './components/CandidateDetailModal';
-import api from './services/api';
+import Dashboard from './components/Dashboard.jsx';
+import Candidates from './components/Candidates.jsx';
+import AgentActivity from './components/AgentActivity.jsx';
+import CandidateDetailModal from './components/CandidateDetailModal.jsx';
+import api from './services/api.js';
 import './App.css';
 
 // WebSocket URL

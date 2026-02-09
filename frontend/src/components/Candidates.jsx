@@ -1,6 +1,6 @@
 import React from 'react';
 import { Eye, RefreshCw, TrendingUp, FileText } from 'lucide-react';
-import { getStatusColor, getRecommendationColor, formatPercent } from '../utils/helpers';
+import { getStatusColor, getRecommendationColor, formatPercent } from '../utils/helpers.js';
 
 const Candidates = ({ candidates, onViewDetails, onRefresh, onRankAll }) => {
   if (candidates.length === 0) {

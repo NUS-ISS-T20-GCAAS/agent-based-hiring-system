@@ -1,6 +1,6 @@
 import React from 'react';
 import { AlertCircle, Trash2 } from 'lucide-react';
-import { formatTime } from '../utils/helpers';
+import { formatTime } from '../utils/helpers.js';
 
 const AgentActivity = ({ activity, onClear }) => {
   return (

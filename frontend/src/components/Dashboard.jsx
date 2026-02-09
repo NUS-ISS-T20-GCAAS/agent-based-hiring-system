@@ -1,7 +1,7 @@
 import React from 'react';
 import { Upload, Users, CheckCircle, XCircle, TrendingUp, Plus, RefreshCw } from 'lucide-react';
-import StatsCard from './StatsCard';
-import { formatPercent } from '../utils/helpers';
+import StatsCard from './StatsCard.jsx';
+import { formatPercent } from '../utils/helpers.js';
 
 const Dashboard = ({ 
   stats, 

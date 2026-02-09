@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { X, CheckCircle, Loader } from 'lucide-react';
-import api from '../services/api';
-import { formatTime, formatPercent } from '../utils/helpers';
+import api from '../services/api.js';
+import { formatTime, formatPercent } from '../utils/helpers.js';
 
 const CandidateDetailModal = ({ candidateId, onClose }) => {
   const [candidate, setCandidate] = useState(null);

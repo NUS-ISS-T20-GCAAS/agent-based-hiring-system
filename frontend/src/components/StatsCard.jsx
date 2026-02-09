@@ -1,4 +1,4 @@
-
+import React from 'react';
 
 /**
  * Reusable Statistics Card Component
