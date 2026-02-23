@@ -20,6 +20,8 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
     depends_on:
       - postgres
+    networks:
+      - app-net  
 
   resume-intake-agent:
     build:
@@ -50,3 +52,7 @@ services:
 
 volumes:
   postgres_data:
+
+networks:
+  app-net:
+    driver: bridge  
