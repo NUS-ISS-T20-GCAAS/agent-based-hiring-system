@@ -1,11 +1,10 @@
 from pydantic import BaseModel, Field
-from typing import Optional, Dict, Any
+from typing import Any, Dict
 
 class JobRequest(BaseModel):
     job_id: str
     resume_url: str
     job_description: str
-    resume_text: Optional[str] = None
 
 class RunRequest(BaseModel):
     entity_id: str
@@ -24,9 +23,3 @@ class Artifact(BaseModel):
     explanation: str
     created_at: str
     version: int = 1
-
-class JobResponse(BaseModel):
-    job_id: str
-    status: str
-    artifact_id: str
-    correlation_id: str

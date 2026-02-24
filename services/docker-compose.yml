@@ -9,12 +9,24 @@ services:
       timeout: 2s
       retries: 5
 
+  screening-agent:
+    build: ./screening-agent
+    ports:
+      - "8002:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 60s
+      timeout: 2s
+      retries: 5
+
   coordinator:
     build: ./coordinator-agent
     ports:
       - "8000:8000"
     depends_on:
-      resume-intake:
+      resume-intake-agent:
+        condition: service_healthy
+      screening-agent:
         condition: service_healthy
 
   postgres:

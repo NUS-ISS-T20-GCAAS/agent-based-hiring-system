@@ -1,4 +1,5 @@
 from app.base_agent import BaseAgent
+from app.worker import process_resume
 
 
 class ResumeIntakeAgent(BaseAgent):
@@ -6,16 +7,13 @@ class ResumeIntakeAgent(BaseAgent):
         return "resume_intake_result"
 
     def handle(self, input_data):
-        # Phase 1: NO real parsing yet
-        # Just prove the pipeline works
-
-        resume_url = input_data.get("resume_url")
+        parsed_resume = process_resume(input_data)
 
         return {
             "payload": {
-                "resume_url": resume_url,
-                "status": "received"
+                **parsed_resume,
+                "status": "parsed",
             },
-            "confidence": 1.0,
-            "explanation": "Resume intake agent received the resume successfully"
+            "confidence": 0.86,
+            "explanation": "Resume intake agent parsed candidate profile for downstream screening",
         }

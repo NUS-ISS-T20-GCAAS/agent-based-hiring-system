@@ -1,7 +1,7 @@
-.PHONY: build-all build-frontend build-coordinator build-resume up down
+.PHONY: build-all build-frontend build-coordinator build-resume build-screening up down
 
 # Build all services individually
-build-all: build-frontend build-coordinator build-resume
+build-all: build-frontend build-coordinator build-resume build-screening
 
 build-frontend:
 	cd frontend && docker build -t frontend .
@@ -11,6 +11,9 @@ build-coordinator:
 
 build-resume:
 	cd services/resume-intake-agent && docker build -t resume-intake-agent .
+
+build-screening:
+	cd services/screening-agent && docker build -t screening-agent .
 
 # Using docker-compose
 compose-build-all:
@@ -24,6 +27,9 @@ compose-build-coordinator:
 
 compose-build-resume:
 	docker-compose -f infra/docker-compose.yml build resume-intake-agent
+
+compose-build-screening:
+	docker-compose -f infra/docker-compose.yml build screening-agent
 
 # Run services
 up:

@@ -33,6 +33,7 @@ make build-all
 make build-frontend
 make build-coordinator
 make build-resume
+make build-screening
 
 # Using docker-compose
 make compose-build-all

@@ -22,6 +22,8 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
     depends_on:
       - postgres
+      - resume-intake-agent
+      - screening-agent
     networks:
       - app-net  
 
@@ -31,6 +33,24 @@ services:
       dockerfile: Dockerfile
     ports:
       - "8001:8000"  # Assuming similar port
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    depends_on:
+      - postgres
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 60s
+      timeout: 2s
+      retries: 5  
+    networks:
+      - app-net  
+
+  screening-agent:
+    build:
+      context: ../services/screening-agent
+      dockerfile: Dockerfile
+    ports:
+      - "8002:8000"
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
     depends_on:

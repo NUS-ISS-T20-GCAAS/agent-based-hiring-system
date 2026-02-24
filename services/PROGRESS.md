@@ -2,7 +2,7 @@
 **Project:** Agent-Based Hiring System for Scalable & Explainable Resume Screening  
 **Team:** Team 20  
 **Module:** GC Architecting AI Systems – Practice  
-**Last Updated:** 2026-02-06  
+**Last Updated:** 2026-02-24  
 
 ---
 
@@ -112,8 +112,8 @@ Establish a secure, traceable, and resilient foundation for a multi-agent hiring
 
 ### Planned Work
 - [ ] Resume Intake: real parsing (PDF/DOC/OCR)
-- [ ] Qualification Screening Agent (new service)
-- [ ] Multi-agent orchestration (resume → qualification)
+- [x] Qualification Screening Agent (new service)
+- [x] Multi-agent orchestration (resume → qualification)
 - [ ] Confidence scoring refinement
 
 ---
