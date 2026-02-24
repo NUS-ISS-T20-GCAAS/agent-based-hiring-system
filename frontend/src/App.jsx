@@ -136,12 +136,15 @@ function App() {
   const handleCreateJob = async () => {
     try {
       await api.createJob({
-        title: 'Senior Python Developer',
-        required_skills: ['Python', 'SQL', 'AWS'],
-        preferred_skills: ['Machine Learning', 'Leadership'],
-        min_years_experience: 5,
-        education_level: "Bachelor's",
-        description: 'Senior developer position requiring strong Python skills and cloud experience'
+        // title: 'Senior Python Developer',
+        // required_skills: ['Python', 'SQL', 'AWS'],
+        // preferred_skills: ['Machine Learning', 'Leadership'],
+        // min_years_experience: 5,
+        // education_level: "Bachelor's",
+        // description: 'Senior developer position requiring strong Python skills and cloud experience'
+        "job_id": "test-001",
+        "resume_url": "dummy.pdf",
+        "job_description": "Backend Engineer"
       });
       
       await fetchJobs();
