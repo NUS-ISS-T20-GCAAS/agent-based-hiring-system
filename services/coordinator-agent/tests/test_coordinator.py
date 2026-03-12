@@ -21,6 +21,29 @@ class FakeResponse:
             raise requests.HTTPError(f"status={self.status_code}")
 
 
+class FakeRepository:
+    def upsert_job(self, **_kwargs):
+        return None
+
+    def create_candidate(self, **_kwargs):
+        return "11111111-1111-1111-1111-111111111111"
+
+    def start_workflow_run(self, **_kwargs):
+        return "22222222-2222-2222-2222-222222222222"
+
+    def update_workflow_step(self, **_kwargs):
+        return None
+
+    def save_artifact(self, **_kwargs):
+        return None
+
+    def mark_workflow_failed(self, **_kwargs):
+        return None
+
+    def complete_workflow(self, **_kwargs):
+        return None
+
+
 class CoordinatorRunJobTests(unittest.TestCase):
     @patch("app.coordinator.time.sleep", return_value=None)
     @patch("app.coordinator.requests.post")
@@ -60,7 +83,7 @@ class CoordinatorRunJobTests(unittest.TestCase):
             job_description="Need python fastapi",
         )
 
-        result = run_job(req)
+        result = run_job(req, repository=FakeRepository())
 
         self.assertEqual(result.job_id, "job-123")
         self.assertEqual(result.status, "completed")
@@ -108,7 +131,7 @@ class CoordinatorRunJobTests(unittest.TestCase):
         )
 
         with self.assertRaises(HTTPException) as ctx:
-            run_job(req)
+            run_job(req, repository=FakeRepository())
 
         self.assertEqual(ctx.exception.status_code, 503)
         self.assertEqual(ctx.exception.detail, "screening unavailable")

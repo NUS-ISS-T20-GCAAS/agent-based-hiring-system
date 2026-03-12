@@ -39,6 +39,9 @@ make build-screening
 make compose-build-all
 make compose-build-frontend
 # etc.
+
+# Apply DB migrations (after services are up)
+make migrate-db
 ```
 
 ### Run the System

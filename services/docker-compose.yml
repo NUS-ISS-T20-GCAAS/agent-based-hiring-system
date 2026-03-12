@@ -23,6 +23,12 @@ services:
     build: ./coordinator-agent
     ports:
       - "8000:8000"
+    environment:
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=hiring_system
+      - DB_USER=user
+      - DB_PASSWORD=password
     depends_on:
       resume-intake-agent:
         condition: service_healthy
@@ -39,3 +45,4 @@ services:
       - "5432:5432"
     volumes:
       - ../db/init_db.sql:/docker-entrypoint-initdb.d/init_db.sql
+      - ../db/migrations:/migrations

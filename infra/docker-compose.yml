@@ -20,6 +20,11 @@ services:
       - "8000:8000"
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=hiring_system
+      - DB_USER=user
+      - DB_PASSWORD=password
     depends_on:
       - postgres
       - resume-intake-agent
@@ -73,6 +78,7 @@ services:
       - "5432:5432"
     volumes:
       - ../db/init_db.sql:/docker-entrypoint-initdb.d/init_db.sql
+      - ../db/migrations:/migrations
     networks:
       - app-net  
 

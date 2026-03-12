@@ -1,4 +1,4 @@
-.PHONY: build-all build-frontend build-coordinator build-resume build-screening up down
+.PHONY: build-all build-frontend build-coordinator build-resume build-screening up down migrate-db migrate-db-services
 
 # Build all services individually
 build-all: build-frontend build-coordinator build-resume build-screening
@@ -37,3 +37,9 @@ up:
 
 down:
 	docker-compose -f infra/docker-compose.yml down
+
+migrate-db:
+	sh db/migrate.sh infra/docker-compose.yml
+
+migrate-db-services:
+	sh db/migrate.sh services/docker-compose.yml
