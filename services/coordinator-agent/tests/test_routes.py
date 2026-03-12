@@ -4,7 +4,15 @@ from unittest.mock import patch
 import requests
 from fastapi import HTTPException
 
-from app.routes import get_job_artifacts
+from app.routes import (
+    get_job_artifacts,
+    list_jobs,
+    get_job,
+    list_candidates,
+    get_candidate,
+    get_candidate_decisions,
+    get_stats,
+)
 
 
 class FakeResponse:
@@ -69,6 +77,127 @@ class RoutesArtifactTests(unittest.TestCase):
             get_job_artifacts("job-2")
 
         self.assertEqual(ctx.exception.status_code, 503)
+
+
+class FakeRepository:
+    def list_jobs(self):
+        return [
+            {
+                "job_id": "job-1",
+                "title": "Backend Engineer",
+                "job_description": "Need python fastapi and sql",
+                "status": "COMPLETED",
+                "candidates_count": 2,
+            }
+        ]
+
+    def get_job(self, *, job_id: str):
+        if job_id == "missing":
+            return None
+        return {
+            "job_id": job_id,
+            "title": "Backend Engineer",
+            "job_description": "Need python fastapi",
+            "status": "COMPLETED",
+            "candidates_count": 1,
+        }
+
+    def list_candidates(self, *, job_id=None):
+        return [
+            {
+                "id": "c-1",
+                "job_id": job_id or "job-1",
+                "name": "Alice",
+                "email": "alice@example.com",
+                "phone": None,
+                "skills": ["python", "fastapi"],
+                "status": "shortlisted",
+                "recommendation": "SHORTLIST",
+                "qualification_score": 0.8,
+                "skills_score": 0.7,
+                "composite_score": 0.77,
+            }
+        ]
+
+    def get_candidate(self, *, candidate_id: str):
+        if candidate_id == "missing":
+            return None
+        return {
+            "id": candidate_id,
+            "job_id": "job-1",
+            "name": "Alice",
+            "email": "alice@example.com",
+            "phone": None,
+            "skills": ["python", "fastapi"],
+            "status": "shortlisted",
+            "recommendation": "SHORTLIST",
+            "qualification_score": 0.8,
+            "skills_score": 0.7,
+            "composite_score": 0.77,
+        }
+
+    def get_candidate_decisions(self, *, candidate_id: str):
+        return [
+            {
+                "decision_id": "d-1",
+                "agent_id": "screening-agent",
+                "artifact_type": "qualification_screening_result",
+                "explanation": "score high",
+                "confidence": 0.9,
+                "created_at": "2026-03-12T12:00:00+00:00",
+            }
+        ]
+
+    def get_stats(self, *, job_id=None):
+        return {
+            "total_candidates": 10,
+            "shortlisted": 4,
+            "rejected": 6,
+            "avg_score": 0.66,
+        }
+
+
+class RoutesReadApiTests(unittest.TestCase):
+    @patch("app.routes.CoordinatorRepository")
+    def test_jobs_candidates_and_stats_routes(self, repo_cls):
+        repo_cls.return_value = FakeRepository()
+
+        jobs = list_jobs()
+        self.assertEqual(len(jobs), 1)
+        self.assertEqual(jobs[0]["job_id"], "job-1")
+        self.assertEqual(jobs[0]["required_skills"], ["need", "python", "fastapi", "sql"])
+
+        job = get_job("job-1")
+        self.assertEqual(job["title"], "Backend Engineer")
+
+        candidates = list_candidates(job_id="job-1")
+        self.assertEqual(len(candidates), 1)
+        self.assertEqual(candidates[0]["id"], "c-1")
+        self.assertEqual(candidates[0]["scores"]["composite"], 0.77)
+
+        candidate = get_candidate("c-1")
+        self.assertEqual(candidate["name"], "Alice")
+
+        decisions = get_candidate_decisions("c-1")
+        self.assertEqual(len(decisions), 1)
+        self.assertEqual(decisions[0]["decision_type"], "qualification_screening_result")
+
+        stats = get_stats(job_id="job-1")
+        self.assertEqual(stats["total_candidates"], 10)
+        self.assertEqual(stats["shortlisted"], 4)
+        self.assertAlmostEqual(stats["pass_rate"], 0.4)
+
+    @patch("app.routes.CoordinatorRepository")
+    def test_not_found_routes(self, repo_cls):
+        repo_cls.return_value = FakeRepository()
+
+        with self.assertRaises(HTTPException) as job_ctx:
+            get_job("missing")
+        self.assertEqual(job_ctx.exception.status_code, 404)
+
+        with self.assertRaises(HTTPException) as candidate_ctx:
+            get_candidate("missing")
+        self.assertEqual(candidate_ctx.exception.status_code, 404)
 
 
 if __name__ == "__main__":

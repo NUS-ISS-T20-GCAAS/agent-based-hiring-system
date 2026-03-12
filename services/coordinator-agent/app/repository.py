@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from psycopg2.extras import Json
+from psycopg2.extras import Json, RealDictCursor
 
 from app.db import transaction
 from app.schemas import Artifact
@@ -265,3 +265,144 @@ class CoordinatorRepository:
                     """,
                     (job_id,),
                 )
+
+    def list_jobs(self) -> list[dict[str, Any]]:
+        with transaction() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT
+                        j.job_id,
+                        j.title,
+                        j.job_description,
+                        j.status,
+                        j.created_at,
+                        j.updated_at,
+                        COUNT(c.candidate_id)::int AS candidates_count
+                    FROM jobs j
+                    LEFT JOIN candidates c ON c.job_id = j.job_id
+                    GROUP BY j.job_id, j.title, j.job_description, j.status, j.created_at, j.updated_at
+                    ORDER BY j.created_at DESC
+                    """
+                )
+                return list(cur.fetchall())
+
+    def get_job(self, *, job_id: str) -> dict[str, Any] | None:
+        with transaction() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT
+                        j.job_id,
+                        j.title,
+                        j.job_description,
+                        j.status,
+                        j.created_at,
+                        j.updated_at,
+                        COUNT(c.candidate_id)::int AS candidates_count
+                    FROM jobs j
+                    LEFT JOIN candidates c ON c.job_id = j.job_id
+                    WHERE j.job_id = %s
+                    GROUP BY j.job_id, j.title, j.job_description, j.status, j.created_at, j.updated_at
+                    """,
+                    (job_id,),
+                )
+                row = cur.fetchone()
+                return dict(row) if row else None
+
+    def list_candidates(self, *, job_id: str | None = None) -> list[dict[str, Any]]:
+        with transaction() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT
+                        candidate_id::text AS id,
+                        job_id,
+                        name,
+                        email,
+                        phone,
+                        skills,
+                        status,
+                        recommendation,
+                        qualification_score,
+                        skills_score,
+                        composite_score,
+                        created_at,
+                        updated_at
+                    FROM candidates
+                    WHERE (%s::text IS NULL OR job_id = %s)
+                    ORDER BY composite_score DESC NULLS LAST, created_at DESC
+                    """,
+                    (job_id, job_id),
+                )
+                return list(cur.fetchall())
+
+    def get_candidate(self, *, candidate_id: str) -> dict[str, Any] | None:
+        with transaction() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT
+                        candidate_id::text AS id,
+                        job_id,
+                        name,
+                        email,
+                        phone,
+                        skills,
+                        status,
+                        recommendation,
+                        qualification_score,
+                        skills_score,
+                        composite_score,
+                        created_at,
+                        updated_at
+                    FROM candidates
+                    WHERE candidate_id = %s::uuid
+                    """,
+                    (candidate_id,),
+                )
+                row = cur.fetchone()
+                return dict(row) if row else None
+
+    def get_candidate_decisions(self, *, candidate_id: str) -> list[dict[str, Any]]:
+        with transaction() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT
+                        artifact_id::text AS decision_id,
+                        agent_id,
+                        artifact_type,
+                        explanation,
+                        confidence,
+                        created_at
+                    FROM artifacts
+                    WHERE candidate_id = %s::uuid
+                    ORDER BY created_at ASC
+                    """,
+                    (candidate_id,),
+                )
+                return list(cur.fetchall())
+
+    def get_stats(self, *, job_id: str | None = None) -> dict[str, Any]:
+        with transaction() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT
+                        COUNT(*)::int AS total_candidates,
+                        COUNT(*) FILTER (WHERE status = 'shortlisted')::int AS shortlisted,
+                        COUNT(*) FILTER (WHERE status = 'rejected')::int AS rejected,
+                        COALESCE(AVG(composite_score), 0) AS avg_score
+                    FROM candidates
+                    WHERE (%s::text IS NULL OR job_id = %s)
+                    """,
+                    (job_id, job_id),
+                )
+                row = cur.fetchone()
+                return dict(row) if row else {
+                    "total_candidates": 0,
+                    "shortlisted": 0,
+                    "rejected": 0,
+                    "avg_score": 0,
+                }
