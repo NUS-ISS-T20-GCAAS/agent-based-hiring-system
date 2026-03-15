@@ -1,4 +1,5 @@
 import unittest
+import asyncio
 from unittest.mock import patch
 
 import requests
@@ -12,6 +13,8 @@ from app.routes import (
     get_candidate,
     get_candidate_decisions,
     get_stats,
+    rank_job_candidates,
+    upload_candidates,
 )
 
 
@@ -156,6 +159,21 @@ class FakeRepository:
             "avg_score": 0.66,
         }
 
+    def rank_candidates(self, *, job_id: str):
+        return 1
+
+
+class FakeUploadFile:
+    def __init__(self, filename: str, content: bytes):
+        self.filename = filename
+        self._content = content
+
+    async def read(self):
+        return self._content
+
+    async def close(self):
+        return None
+
 
 class RoutesReadApiTests(unittest.TestCase):
     @patch("app.routes.CoordinatorRepository")
@@ -187,6 +205,9 @@ class RoutesReadApiTests(unittest.TestCase):
         self.assertEqual(stats["shortlisted"], 4)
         self.assertAlmostEqual(stats["pass_rate"], 0.4)
 
+        rank_result = rank_job_candidates("job-1")
+        self.assertEqual(rank_result["ranked_candidates"], 1)
+
     @patch("app.routes.CoordinatorRepository")
     def test_not_found_routes(self, repo_cls):
         repo_cls.return_value = FakeRepository()
@@ -198,6 +219,25 @@ class RoutesReadApiTests(unittest.TestCase):
         with self.assertRaises(HTTPException) as candidate_ctx:
             get_candidate("missing")
         self.assertEqual(candidate_ctx.exception.status_code, 404)
+
+    @patch("app.routes.run_job")
+    @patch("app.routes.CoordinatorRepository")
+    def test_batch_upload_route(self, repo_cls, run_job_mock):
+        repo_cls.return_value = FakeRepository()
+        run_job_mock.return_value = type(
+            "JobResponseObj",
+            (),
+            {"model_dump": lambda self: {"job_id": "job-1", "status": "completed", "artifact_id": "a-1"}},
+        )()
+
+        files = [
+            FakeUploadFile("a.txt", b"Python FastAPI engineer"),
+            FakeUploadFile("b.txt", b"SQL and AWS"),
+        ]
+
+        result = asyncio.run(upload_candidates(job_id="job-1", files=files))
+        self.assertEqual(result["processed"], 2)
+        self.assertEqual(result["failed"], 0)
 
 
 if __name__ == "__main__":
