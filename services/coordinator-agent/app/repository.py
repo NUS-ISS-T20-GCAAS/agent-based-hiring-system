@@ -406,3 +406,58 @@ class CoordinatorRepository:
                     "rejected": 0,
                     "avg_score": 0,
                 }
+
+    def rank_candidates(self, *, job_id: str) -> int:
+        with transaction() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE candidates
+                    SET
+                        skills_score = COALESCE(skills_score, 0),
+                        qualification_score = COALESCE(qualification_score, 0),
+                        composite_score = ROUND(
+                            (
+                                COALESCE(qualification_score, 0) * 0.7
+                                + COALESCE(skills_score, 0) * 0.3
+                            )::numeric,
+                            4
+                        ),
+                        recommendation = CASE
+                            WHEN (
+                                COALESCE(qualification_score, 0) * 0.7
+                                + COALESCE(skills_score, 0) * 0.3
+                            ) >= 0.70 THEN 'SHORTLIST'
+                            WHEN (
+                                COALESCE(qualification_score, 0) * 0.7
+                                + COALESCE(skills_score, 0) * 0.3
+                            ) >= 0.45 THEN 'CONSIDER'
+                            ELSE 'REJECT'
+                        END,
+                        status = CASE
+                            WHEN (
+                                COALESCE(qualification_score, 0) * 0.7
+                                + COALESCE(skills_score, 0) * 0.3
+                            ) >= 0.70 THEN 'shortlisted'
+                            WHEN (
+                                COALESCE(qualification_score, 0) * 0.7
+                                + COALESCE(skills_score, 0) * 0.3
+                            ) >= 0.45 THEN 'screened'
+                            ELSE 'rejected'
+                        END,
+                        updated_at = NOW()
+                    WHERE job_id = %s
+                    """,
+                    (job_id,),
+                )
+                updated = cur.rowcount
+                if updated > 0:
+                    cur.execute(
+                        """
+                        UPDATE jobs
+                        SET status = 'COMPLETED', updated_at = NOW()
+                        WHERE job_id = %s
+                        """,
+                        (job_id,),
+                    )
+                return updated

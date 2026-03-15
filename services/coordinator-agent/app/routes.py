@@ -1,7 +1,7 @@
 import re
 from datetime import datetime
 from decimal import Decimal
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 import requests
 
 from app.schemas import JobRequest, JobResponse, Artifact
@@ -60,6 +60,19 @@ def _extract_required_skills(job_description: str | None) -> list[str]:
     return skills
 
 
+def _extract_resume_text(raw: bytes) -> str:
+    if not raw:
+        return ""
+
+    try:
+        decoded = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        decoded = raw.decode("latin-1", errors="ignore")
+
+    normalized = re.sub(r"\s+", " ", decoded).strip()
+    return normalized[:20000]
+
+
 def _job_payload(row: dict) -> dict:
     return {
         "job_id": row["job_id"],
@@ -103,6 +116,13 @@ def _decision_payload(row: dict) -> dict:
     }
 
 
+def _job_or_404(repository: CoordinatorRepository, job_id: str) -> dict:
+    row = repository.get_job(job_id=job_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="job not found")
+    return row
+
+
 @router.post("/jobs", response_model=JobResponse)
 def submit_job(request: JobRequest):
     return run_job(request)
@@ -115,12 +135,22 @@ def list_jobs():
     return [_job_payload(row) for row in rows]
 
 
+@router.post("/jobs/{job_id}/rank")
+def rank_job_candidates(job_id: str):
+    repository = CoordinatorRepository()
+    _job_or_404(repository, job_id)
+    ranked = repository.rank_candidates(job_id=job_id)
+    return {
+        "job_id": job_id,
+        "ranked_candidates": ranked,
+        "status": "completed",
+    }
+
+
 @router.get("/jobs/{job_id}")
 def get_job(job_id: str):
     repository = CoordinatorRepository()
-    row = repository.get_job(job_id=job_id)
-    if not row:
-        raise HTTPException(status_code=404, detail="job not found")
+    row = _job_or_404(repository, job_id)
     return _job_payload(row)
 
 
@@ -129,6 +159,83 @@ def list_candidates(job_id: str | None = Query(default=None)):
     repository = CoordinatorRepository()
     rows = repository.list_candidates(job_id=job_id)
     return [_candidate_payload(row) for row in rows]
+
+
+async def _process_upload_files(
+    *,
+    repository: CoordinatorRepository,
+    job_id: str,
+    files: list[UploadFile],
+) -> dict:
+    job = _job_or_404(repository, job_id)
+    job_description = job.get("job_description") or ""
+
+    results: list[dict] = []
+    errors: list[dict] = []
+
+    for upload in files:
+        filename = upload.filename or "resume.txt"
+        try:
+            content = await upload.read()
+            resume_text = _extract_resume_text(content)
+            request = JobRequest(
+                job_id=job_id,
+                resume_url=f"upload://{filename}",
+                resume_text=resume_text,
+                job_description=job_description,
+            )
+            job_response = run_job(request)
+            results.append(job_response.model_dump())
+        except HTTPException as exc:
+            errors.append(
+                {
+                    "file": filename,
+                    "detail": exc.detail,
+                    "status_code": exc.status_code,
+                }
+            )
+        except Exception as exc:
+            errors.append(
+                {
+                    "file": filename,
+                    "detail": str(exc),
+                    "status_code": 500,
+                }
+            )
+        finally:
+            await upload.close()
+
+    return {
+        "job_id": job_id,
+        "processed": len(results),
+        "failed": len(errors),
+        "results": results,
+        "errors": errors,
+    }
+
+
+@router.post("/candidates/upload")
+async def upload_candidate(job_id: str = Query(...), file: UploadFile = File(...)):
+    repository = CoordinatorRepository()
+    result = await _process_upload_files(repository=repository, job_id=job_id, files=[file])
+
+    if result["processed"] == 0:
+        first_error = result["errors"][0] if result["errors"] else {"detail": "upload failed", "status_code": 500}
+        raise HTTPException(status_code=first_error["status_code"], detail=first_error["detail"])
+
+    return result["results"][0]
+
+
+@router.post("/candidates/batch-upload")
+async def upload_candidates(job_id: str = Query(...), files: list[UploadFile] = File(...)):
+    repository = CoordinatorRepository()
+    result = await _process_upload_files(repository=repository, job_id=job_id, files=files)
+
+    if result["processed"] == 0:
+        first_error = result["errors"][0] if result["errors"] else {"detail": "batch upload failed", "status_code": 500}
+        raise HTTPException(status_code=first_error["status_code"], detail=first_error["detail"])
+
+    return result
 
 
 @router.get("/candidates/{candidate_id}")
@@ -163,6 +270,50 @@ def get_stats(job_id: str | None = Query(default=None)):
         "rejected": rejected,
         "avg_score": avg_score,
         "pass_rate": pass_rate,
+    }
+
+
+@router.get("/agents/status")
+def get_agent_status():
+    checks = [
+        ("coordinator", "http://localhost:8000/health"),
+        ("resume-intake", f"{RESUME_INTAKE_AGENT_URL}/health"),
+        ("screening", f"{SCREENING_AGENT_URL}/health"),
+    ]
+
+    services = []
+    for name, url in checks:
+        try:
+            resp = requests.get(url, timeout=2)
+            services.append(
+                {
+                    "agent": name,
+                    "status": "online" if resp.ok else "degraded",
+                    "http_status": resp.status_code,
+                }
+            )
+        except Exception as exc:
+            services.append({"agent": name, "status": "offline", "error": str(exc)})
+
+    overall = "online" if all(x["status"] == "online" for x in services) else "degraded"
+    return {"status": overall, "services": services}
+
+
+@router.get("/audit/bias-check")
+def get_bias_check(job_id: str | None = Query(default=None)):
+    repository = CoordinatorRepository()
+    stats = repository.get_stats(job_id=job_id)
+    total = int(stats.get("total_candidates") or 0)
+    shortlisted = int(stats.get("shortlisted") or 0)
+    selection_rate = 0.0 if total == 0 else shortlisted / total
+
+    return {
+        "job_id": job_id,
+        "selection_rate": selection_rate,
+        "total_candidates": total,
+        "shortlisted": shortlisted,
+        "bias_flags": [],
+        "status": "not_implemented",
     }
 
 
