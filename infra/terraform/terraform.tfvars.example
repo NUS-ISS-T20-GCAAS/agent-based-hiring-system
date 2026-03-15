@@ -1,0 +1,21 @@
+# ──────────────────────────────────────────────
+# Example variable values — copy to terraform.tfvars
+# ──────────────────────────────────────────────
+
+aws_region    = "ap-southeast-1"
+project_name  = "hiring-system"
+environment   = "dev"
+
+# ── EKS ─────────────────────────
+eks_cluster_version = "1.32"
+node_instance_type  = "t3.medium"
+node_desired_size   = 1
+node_min_size       = 1
+node_max_size       = 3
+
+# ── RDS ─────────────────────────
+db_instance_class  = "db.t3.micro"
+db_name            = "hiring_system"
+db_username        = "dbadmin"
+db_password        = "CHANGE_ME_BEFORE_APPLY"   # ⚠️  Use a strong password!
+db_engine_version  = "15.7"

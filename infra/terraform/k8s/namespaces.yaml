@@ -1,0 +1,14 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: frontend
+  labels:
+    app.kubernetes.io/part-of: hiring-system
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: services
+  labels:
+    app.kubernetes.io/part-of: hiring-system
