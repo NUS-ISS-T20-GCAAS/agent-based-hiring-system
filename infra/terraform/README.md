@@ -1,0 +1,248 @@
+# AWS Infrastructure — Terraform
+
+Infrastructure-as-Code for the Agent-Based Hiring System, provisioning EKS (with Fargate), ECR, RDS PostgreSQL, and networking on AWS.
+
+---
+
+## File Inventory
+
+```
+infra/terraform/
+├── versions.tf              # Terraform & AWS provider version pins
+├── variables.tf             # All input variables with defaults
+├── terraform.tfvars.example # Example values (copy to terraform.tfvars)
+├── vpc.tf                   # VPC, subnets, IGW, NAT Gateway, routes
+├── ecr.tf                   # ECR repos (4) with scan-on-push & lifecycle
+├── eks.tf                   # EKS cluster (K8s 1.32) + managed node group
+├── eks-fargate.tf           # Fargate profiles (services + kube-system)
+├── rds.tf                   # RDS PostgreSQL 15, encrypted, private-only
+├── iam.tf                   # IAM roles (cluster, nodes, Fargate, OIDC)
+├── outputs.tf               # Exported endpoints, URLs, and helper commands
+└── k8s/
+    ├── namespaces.yaml                      # frontend + services namespaces
+    ├── frontend-deployment.yaml             # React/nginx, 2 replicas, LB
+    ├── coordinator-agent-deployment.yaml    # Fargate, HPA 1→5
+    ├── resume-intake-agent-deployment.yaml  # Fargate, HPA 1→5
+    ├── screening-agent-deployment.yaml      # Fargate, HPA 1→5
+    └── secrets.yaml.example                 # Template for credentials
+```
+
+---
+
+## Architecture
+
+```mermaid
+graph TB
+    Internet((Internet))
+
+    subgraph VPC["VPC — 10.0.0.0/16"]
+        subgraph PubSub["Public Subnets (10.0.1.0/24, 10.0.2.0/24)"]
+            IGW[Internet Gateway]
+            ALB[Application Load Balancer]
+            NAT[NAT Gateway]
+        end
+
+        subgraph PrivSub["Private Subnets (10.0.10.0/24, 10.0.11.0/24)"]
+            subgraph EKS["EKS Cluster — Kubernetes 1.32"]
+                subgraph NodeGroup["Managed Node Group (t3.medium)"]
+                    FE["frontend<br/>namespace<br/>(2 replicas)"]
+                end
+                subgraph Fargate["Fargate — Serverless"]
+                    COORD["coordinator-agent"]
+                    RESUME["resume-intake-agent"]
+                    SCREEN["screening-agent"]
+                end
+            end
+            RDS[("RDS PostgreSQL 15<br/>db.t3.micro<br/>Encrypted")]
+        end
+    end
+
+    ECR["ECR<br/>(4 repositories)"]
+
+    Internet --> IGW --> ALB --> FE
+    COORD --> RDS
+    RESUME --> RDS
+    SCREEN --> RDS
+    PrivSub --> NAT --> IGW
+    EKS -.-> ECR
+```
+
+| Component | Details |
+|-----------|---------|
+| **VPC** | `10.0.0.0/16`, 2 AZs (`ap-southeast-1a`, `1b`), single NAT (cost-optimized) |
+| **EKS** | K8s 1.32, public+private endpoint, API/audit/authenticator logging |
+| **Node Group** | `t3.medium`, 1–3 nodes, hosts `frontend` namespace |
+| **Fargate** | `services` namespace — coordinator, resume-intake, screening agents |
+| **RDS** | PostgreSQL 15, gp3 storage (20–50 GB auto-scale), 7-day backups, encrypted |
+| **ECR** | 4 repos, immutable tags, scan-on-push, 10-image lifecycle cleanup |
+
+---
+
+## Prerequisites & Credentials
+
+### Required Before `terraform apply`
+
+| # | Item | How to Set Up |
+|---|------|---------------|
+| 1 | **AWS CLI & Credentials** | `aws configure` or set `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY`. Verify: `aws sts get-caller-identity` |
+| 2 | **IAM Permissions** | The IAM user/role needs: `EKS`, `EC2` (VPC/SG/Subnets), `ECR`, `RDS`, `IAM`, `ELB`, `CloudWatch Logs` |
+| 3 | **Terraform ≥ 1.5** | Verify: `terraform --version` |
+| 4 | **Database Password** | Set a strong password in `terraform.tfvars` (see Files to Update below) |
+
+### Required After `terraform apply`
+
+| # | Item | How to Set Up |
+|---|------|---------------|
+| 5 | **kubectl** | Install from [kubernetes.io](https://kubernetes.io/docs/tasks/tools/). Configure: `aws eks update-kubeconfig --name hiring-system-dev --region ap-southeast-1` |
+| 6 | **OpenAI API Key** | Needed for K8s secrets — base64 encode: `echo -n "sk-..." \| base64` |
+| 7 | **RDS Hostname** | Auto-output by Terraform after apply — copy into K8s secrets |
+
+---
+
+## Files to Update
+
+### 1. `terraform.tfvars` (create from example)
+
+```bash
+cp terraform.tfvars.example terraform.tfvars
+```
+
+Edit `terraform.tfvars` and set:
+
+```hcl
+db_password = "YOUR_STRONG_PASSWORD_HERE"  # ⚠️ Required — replace before apply
+
+# Optional overrides (defaults are already set):
+# aws_region         = "ap-southeast-1"
+# node_instance_type = "t3.medium"
+# db_instance_class  = "db.t3.micro"
+```
+
+### 2. `k8s/secrets.yaml` (create from example, post-apply)
+
+```bash
+cp k8s/secrets.yaml.example k8s/secrets.yaml
+```
+
+Edit `k8s/secrets.yaml` and replace `<BASE64_ENCODED_VALUE>` placeholders:
+
+```bash
+echo -n "sk-your-openai-key" | base64               # → openai-api-key
+echo -n "your-rds-hostname.rds.amazonaws.com" | base64  # → db-host  (from terraform output)
+echo -n "dbadmin" | base64                           # → db-username
+echo -n "your-db-password" | base64                  # → db-password
+```
+
+### 3. `k8s/*-deployment.yaml` — Update ECR Image URIs
+
+After `terraform apply`, replace the placeholder image references in all deployment YAMLs:
+
+```yaml
+# Replace this:
+image: <ACCOUNT_ID>.dkr.ecr.<REGION>.amazonaws.com/hiring-system/coordinator-agent:latest
+
+# With your actual values (from terraform output ecr_repository_urls):
+image: 123456789012.dkr.ecr.ap-southeast-1.amazonaws.com/hiring-system/coordinator-agent:latest
+```
+
+---
+
+## Deployment Steps
+
+### Step 1 — Initialize Terraform
+
+```bash
+cd infra/terraform
+terraform init
+```
+
+### Step 2 — Configure Variables
+
+```bash
+cp terraform.tfvars.example terraform.tfvars
+# Edit terraform.tfvars → set db_password
+```
+
+### Step 3 — Preview Changes (dry run)
+
+```bash
+terraform plan -var-file=terraform.tfvars
+```
+
+Review the output — no resources are created yet.
+
+### Step 4 — Apply Infrastructure
+
+```bash
+terraform apply -var-file=terraform.tfvars
+# Type "yes" to confirm
+```
+
+> ⚠️ **This creates real AWS resources and incurs costs** (~$100+/month for EKS + NAT + RDS).
+
+### Step 5 — Configure kubectl
+
+```bash
+aws eks update-kubeconfig --name hiring-system-dev --region ap-southeast-1
+kubectl get nodes   # Should show the managed node group
+```
+
+### Step 6 — Deploy Kubernetes Resources
+
+```bash
+# Namespaces
+kubectl apply -f k8s/namespaces.yaml
+
+# Secrets (after editing secrets.yaml with real values)
+cp k8s/secrets.yaml.example k8s/secrets.yaml
+# Edit secrets.yaml with base64-encoded credentials
+kubectl apply -f k8s/secrets.yaml
+
+# Deployments + Services + HPAs
+kubectl apply -f k8s/frontend-deployment.yaml
+kubectl apply -f k8s/coordinator-agent-deployment.yaml
+kubectl apply -f k8s/resume-intake-agent-deployment.yaml
+kubectl apply -f k8s/screening-agent-deployment.yaml
+```
+
+### Step 7 — Verify
+
+```bash
+kubectl get pods -n frontend        # Frontend on managed node group
+kubectl get pods -n services        # Agents on Fargate
+kubectl get svc -n frontend         # LoadBalancer → external URL
+kubectl get hpa -n services         # HPA autoscalers
+```
+
+### Step 8 — Initialize Database Schema
+
+```bash
+# Get RDS endpoint from terraform output
+terraform output rds_endpoint
+
+# Connect and run init_db.sql (from a pod or bastion)
+kubectl run db-init --rm -it --image=postgres:15 -n services -- \
+  psql "postgresql://dbadmin:YOUR_PASSWORD@YOUR_RDS_HOST:5432/hiring_system" \
+  -f /dev/stdin < ../../db/init_db.sql
+```
+
+---
+
+## Tear Down
+
+```bash
+# Remove K8s resources first
+kubectl delete -f k8s/
+
+# Destroy all AWS resources
+terraform destroy -var-file=terraform.tfvars
+```
+
+---
+
+## Key Notes
+
+- **Kubernetes 1.32** was chosen because 1.29 extended support expires March 23, 2026. Version 1.32 has extended support until March 2027.
+- **Single NAT Gateway** is used for cost optimization in dev. For production, use one NAT per AZ.
+- **Fargate** is used for all service agents to enable serverless scaling. HPA auto-scales from 1→5 pods per service.
+- **RDS** is single-AZ for dev. Enable `multi_az = true` in `variables.tf` for production.
