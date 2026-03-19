@@ -20,6 +20,7 @@ services:
       - "8000:8000"
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o-mini}
       - DB_HOST=postgres
       - DB_PORT=5432
       - DB_NAME=hiring_system
@@ -40,6 +41,7 @@ services:
       - "8001:8000"  # Assuming similar port
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o-mini}
     depends_on:
       - postgres
     healthcheck:
@@ -58,6 +60,7 @@ services:
       - "8002:8000"
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o-mini}
     depends_on:
       - postgres
     healthcheck:

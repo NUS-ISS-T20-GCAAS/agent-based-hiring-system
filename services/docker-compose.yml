@@ -3,6 +3,9 @@ services:
     build: ./resume-intake-agent
     ports:
       - "8001:8000"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o-mini}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 60s
@@ -13,6 +16,9 @@ services:
     build: ./screening-agent
     ports:
       - "8002:8000"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o-mini}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 60s
@@ -24,6 +30,7 @@ services:
     ports:
       - "8000:8000"
     environment:
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o-mini}
       - DB_HOST=postgres
       - DB_PORT=5432
       - DB_NAME=hiring_system
