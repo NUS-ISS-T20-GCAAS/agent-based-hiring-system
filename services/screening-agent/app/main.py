@@ -20,7 +20,7 @@ def run_agent(req: RunRequest):
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    return {"status": "ok", "llm_enabled": agent.llm.enabled}
 
 @app.get("/artifacts/{entity_id}", response_model=List[Artifact])
 def get_artifacts(entity_id: str):

@@ -16,6 +16,33 @@ SKILL_KEYWORDS = (
 )
 
 
+def normalize_years_experience(value) -> int:
+    if isinstance(value, (int, float)):
+        return max(0, int(value))
+    if isinstance(value, str):
+        match = re.search(r"\d+", value)
+        if match:
+            return int(match.group(0))
+    return 0
+
+
+def normalize_skills(value) -> list[str]:
+    if not isinstance(value, list):
+        return []
+
+    seen: set[str] = set()
+    normalized: list[str] = []
+    for item in value:
+        if not isinstance(item, str):
+            continue
+        skill = item.strip().lower()
+        if not skill or skill in seen:
+            continue
+        seen.add(skill)
+        normalized.append(skill)
+    return normalized
+
+
 def _extract_years_experience(text: str) -> int:
     years_match = re.search(r"(\d{1,2})\s*\+?\s*(?:years|yrs)", text)
     if years_match:
@@ -48,4 +75,15 @@ def process_resume(payload: dict) -> dict:
         "skills": skills,
         "years_experience": years_experience,
         "resume_url": resume_url,
+    }
+
+
+def coerce_resume_result(result: dict, *, resume_url: str) -> dict:
+    return {
+        "name": result.get("name") or "Unknown Candidate",
+        "email": result.get("email"),
+        "skills": normalize_skills(result.get("skills")),
+        "years_experience": normalize_years_experience(result.get("years_experience")),
+        "resume_url": resume_url,
+        "summary": result.get("summary"),
     }
