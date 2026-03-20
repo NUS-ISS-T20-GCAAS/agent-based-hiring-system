@@ -1,69 +1,67 @@
-```
-.
+```text
+/Users/isaactan/Projects/agent-based-hiring-system
 ├── Makefile
 ├── README.md
 ├── TREE.md
 ├── db
-│   └── init_db.sql
+│   ├── init_db.sql
+│   ├── migrate.sh
+│   └── migrations
+│       ├── 001_extensions.sql
+│       ├── 002_jobs_candidates.sql
+│       ├── 003_workflow_artifacts.sql
+│       └── 004_indexes.sql
 ├── frontend
-│   ├── index.html
-│   ├── src
-│   │   ├── components
-│   │   │   ├── Dashboard.jsx
-│   │   │   ├── Candidates.jsx
-│   │   │   ├── AgentActivity.jsx
-│   │   │   ├── CandidateDetailModal.jsx
-│   │   │   └── StatsCard.jsx
-│   │   ├── services
-│   │   │   └── api.js
-│   │   ├── utils
-│   │   │   └── helpers.js
-│   │   ├── App.jsx
-│   │   ├── App.css
-│   │   ├── main.jsx
-│   │   └── index.css
-│   ├── Dockerfile
-│   ├── nginx.conf
-│   ├── package-lock.json
-│   ├── package.json
-│   ├── vite.config.js
-│   ├── tailwind.config.js
-│   └── postcss.config.js
+│   ├── Dockerfile
+│   ├── index.html
+│   ├── nginx.conf
+│   ├── package-lock.json
+│   ├── package.json
+│   ├── postcss.config.js
+│   ├── src
+│   │   ├── App.css
+│   │   ├── App.jsx
+│   │   ├── components
+│   │   ├── index.css
+│   │   ├── main.jsx
+│   │   ├── services
+│   │   └── utils
+│   ├── tailwind.config.js
+│   └── vite.config.js
 ├── infra
-│   ├── db
-│   │   └── init_db.sql
-│   ├── docker-compose.yml
-│   └── k8s
+│   ├── docker-compose.yml
+│   └── terraform
+│       ├── README.md
+│       ├── ecr.tf
+│       ├── eks-fargate.tf
+│       ├── eks.tf
+│       ├── iam.tf
+│       ├── k8s
+│       ├── outputs.tf
+│       ├── rds.tf
+│       ├── terraform.tfvars.example
+│       ├── variables.tf
+│       ├── versions.tf
+│       └── vpc.tf
 └── services
+    ├── PROGRESS.md
     ├── README.md
     ├── coordinator-agent
-    │   ├── Dockerfile
-    │   ├── app
-    │   │   ├── agents.py
-    │   │   ├── base_agent.py
-    │   │   ├── bootstrap.py
-    │   │   ├── config.py
-    │   │   ├── coordinator.py
-    │   │   ├── events.py
-    │   │   ├── logger.py
-    │   │   ├── main.py
-    │   │   ├── routes.py
-    │   │   ├── schemas.py
-    │   │   ├── shared_memory.py
-    │   │   └── state.py
-    │   └── requirements.txt
+    │   ├── Dockerfile
+    │   ├── app
+    │   ├── requirements.txt
+    │   └── tests
     ├── docker-compose.yml
-    └── resume-intake-agent
+    ├── resume-intake-agent
+    │   ├── Dockerfile
+    │   ├── app
+    │   ├── requirements.txt
+    │   └── tests
+    └── screening-agent
         ├── Dockerfile
         ├── app
-        │   ├── agent.py
-        │   ├── health.py
-        │   ├── main.py
-        │   ├── schemas.py
-        │   └── worker.py
-        └── requirements.txt
+        ├── requirements.txt
+        └── tests
 
-
-14 directories, 48 files
-
+21 directories, 42 files
 ```
