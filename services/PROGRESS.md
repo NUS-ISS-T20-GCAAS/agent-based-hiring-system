@@ -1,131 +1,123 @@
-# Project Progress Tracker  
-**Project:** Agent-Based Hiring System for Scalable & Explainable Resume Screening  
-**Team:** Team 20  
-**Module:** GC Architecting AI Systems – Practice  
-**Last Updated:** 2026-02-24  
+# Project Progress Tracker
+**Project:** Agent-Based Hiring System for Scalable & Explainable Resume Screening
+**Team:** Team 20
+**Module:** GC Architecting AI Systems – Practice
+**Last Updated:** 2026-03-21
+
+---
+
+## Overall Status
+
+The project now has a working backend vertical slice:
+
+1. Coordinator accepts job submissions
+2. Resume intake agent parses candidate data
+3. Screening agent scores qualification
+4. Workflow state and artifacts are persisted in Postgres
+5. DB-backed APIs expose jobs, candidates, decisions, stats, uploads, and artifact replay
+
+OpenAI model hooks are implemented for the two active agent roles, but real model-backed execution still depends on configuring `OPENAI_API_KEY`.
 
 ---
 
 ## Phase 1 – Foundation (COMPLETED ✅)
 
-### Objective
-Establish a secure, traceable, and resilient foundation for a multi-agent hiring system, ensuring standardized agent contracts, explainability, and failure isolation before implementing domain logic.
-
----
-
-## 1. Architecture & Core Contracts
-
-### Agent Contract
-- [x] `BaseAgent` abstract class implemented
-- [x] Enforced `run()` lifecycle (logging, memory write, error capture)
-- [x] Mandatory agent outputs:
-  - payload
-  - confidence
-  - explanation
+### Architecture & Contracts
+- [x] `BaseAgent` contract implemented
+- [x] Standard artifact shape enforced
 - [x] Correlation ID propagated across services
+- [x] Shared memory replay implemented at agent-service level
+- [x] Coordinator validates upstream artifact responses
 
-### Shared Memory
-- [x] Append-only shared memory abstraction
-- [x] Artifact versioning supported
-- [x] Replay by `entity_id`
-- [ ] Persistent storage (Postgres/Redis) – *Phase 3*
+### Inter-Service Communication
+- [x] Coordinator dispatches work via HTTP
+- [x] Resume intake runs as an independent service
+- [x] Screening runs as an independent service
+- [x] Health endpoints exposed for all active services
 
----
-
-## 2. Inter-Service Communication
-
-### Resume Intake Agent
-- [x] Runs as an independent service
-- [x] Exposes `/run`, `/artifacts/{entity_id}`, `/health`
-- [x] Uses `BaseAgent` internally
-- [x] Enforces `RunRequest` schema via Pydantic
-- [x] Returns validated `Artifact` objects
-
-### Coordinator Agent
-- [x] Acts as orchestration layer only (no business logic)
-- [x] Dispatches tasks via HTTP
-- [x] Does not import agent code
-- [x] Generates and propagates `correlation_id`
-
----
-
-## 3. API Contracts & Validation
-
-### Request Contracts
-- [x] `RunRequest` schema enforced
-- [x] Invalid requests rejected with `422 Unprocessable Entity`
-
-### Response Contracts
-- [x] `Artifact` schema enforced
-- [x] Coordinator validates upstream responses
-- [x] `/jobs/{id}/artifacts` returns validated artifact list
-
----
-
-## 4. Resilience & Failure Handling
-
-### Retry Strategy
-- [x] Bounded retries (max 3 attempts)
-- [x] Backoff between retries
-- [x] Retry attempts logged with correlation_id
-- [x] Retries limited to transient failures
-
-### Failure Modes
-- [x] Resume agent down → Coordinator returns `503`
-- [x] Clean JSON error responses (no stack traces)
-- [x] Failure events logged (`job_failed`, `agent_call_failed`)
-
----
-
-## 5. Observability & Auditability
-
-### Logging
+### Resilience & Observability
+- [x] Retry logic with bounded attempts
 - [x] Structured JSON logs
-- [x] Correlation ID present in all logs
-- [x] Agent lifecycle events logged:
-  - job_received
-  - agent_call_attempt
-  - agent_call_failed
-  - job_completed
-- [x] Uvicorn access logs disabled to avoid noise
-
-### Traceability
-- [x] End-to-end replay via `/jobs/{id}/artifacts`
-- [x] Artifact includes timestamps and agent metadata
+- [x] Failure events logged with correlation IDs
+- [x] Artifact replay supported through `/jobs/{job_id}/artifacts`
 
 ---
 
-## Phase 1 Verification Checklist (PASSED ✅)
+## Phase 2 – Multi-Agent Vertical Slice (IMPLEMENTED ✅)
 
-| Test Case | Status |
-|---------|--------|
-| Happy path `/jobs` | ✅ |
-| Artifact replay | ✅ |
-| Invalid `/run` payload rejected | ✅ |
-| Resume agent down → `/jobs` returns 503 | ✅ |
-| Resume agent down → artifacts proxy returns 503 | ✅ |
-| Retry attempts logged correctly | ✅ |
+### Active Agents
+- [x] Resume Intake Agent
+- [x] Qualification Screening Agent
+- [ ] Audit / Compliance Agent
+
+### Coordinator Workflow
+- [x] `resume-intake -> screening` orchestration
+- [x] Workflow bootstrap and completion tracking
+- [x] Candidate record creation during processing
+- [x] Artifact persistence for each completed step
+
+### Database & Persistence
+- [x] Postgres migrations added
+- [x] `jobs` table
+- [x] `candidates` table
+- [x] `workflow_runs` table
+- [x] `artifacts` table
+- [x] Read/write repository layer implemented
+
+### Frontend-Facing APIs
+- [x] `POST /jobs`
+- [x] `GET /jobs`
+- [x] `GET /jobs/{job_id}`
+- [x] `POST /jobs/{job_id}/rank`
+- [x] `GET /jobs/{job_id}/artifacts`
+- [x] `GET /candidates`
+- [x] `GET /candidates/{candidate_id}`
+- [x] `GET /candidates/{candidate_id}/decisions`
+- [x] `POST /candidates/upload`
+- [x] `POST /candidates/batch-upload`
+- [x] `GET /stats`
+- [x] `GET /agents/status`
+- [x] `GET /audit/bias-check` placeholder
+
+### Testing & Verification
+- [x] Coordinator route tests added
+- [x] Coordinator orchestration tests added
+- [x] Resume intake LLM/fallback tests added
+- [x] Screening LLM/fallback tests added
+- [x] End-to-end smoke test executed through the running service stack
 
 ---
 
-## Phase 2 – Individual Agents Development (UPCOMING 🚧)
+## Phase 3 – Intelligence Refinement (IN PROGRESS 🚧)
 
-### Planned Work
-- [ ] Resume Intake: real parsing (PDF/DOC/OCR)
-- [x] Qualification Screening Agent (new service)
-- [x] Multi-agent orchestration (resume → qualification)
-- [ ] Confidence scoring refinement
+### OpenAI-Backed Agent Roles
+- [x] Resume intake model client added
+- [x] Screening model client added
+- [x] `OPENAI_MODEL` configuration added
+- [x] `llm_enabled` health reporting added
+- [ ] Real end-to-end run with production API key
+
+### Quality Gaps
+- [ ] Better PDF/DOCX/OCR parsing
+- [ ] Improved candidate name extraction fallback
+- [ ] Better job-skill extraction for heuristic screening
+- [ ] Confidence scoring calibration
 
 ---
 
-## Phase 3 – Coordination & Intelligence (PLANNED)
+## Phase 4 – Planned Work
 
 - [ ] Audit & Compliance Agent
-- [ ] Bias detection hooks
-- [ ] Persistent shared memory
-- [ ] Human-in-the-loop escalation triggers
+- [ ] Bias detection implementation behind `/audit/bias-check`
+- [ ] Human-in-the-loop escalation flow
+- [ ] Async queue/event-driven execution if scale requires it
+- [ ] Delete candidate endpoint and cleanup flows
 
 ---
 
-## Notes / Decisions Log
-- Phase 1 prioritised correctness, traceability, and resilience over feature comp
+## Notes
+
+- The previous tracker understated the current backend progress.
+- Persistence is now implemented in the coordinator workflow through Postgres.
+- Agent-local shared memory still exists for per-service replay, but the system of record is now the database-backed coordinator flow.
+- Real model reasoning is ready in code but inactive until OpenAI credentials are configured.
