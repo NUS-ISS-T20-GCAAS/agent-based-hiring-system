@@ -56,6 +56,9 @@ class ScreeningAgent(BaseAgent):
         job_description = (input_data.get("job_description") or "").lower()
         job_requirements = input_data.get("job_requirements") or {}
 
+        # Track which method was used
+        method_used = "llm"
+        
         try:
             # Try LLM-powered screening first
             self.logger.info(
@@ -80,6 +83,8 @@ class ScreeningAgent(BaseAgent):
             
         except Exception as exc:
             # Fallback to rule-based heuristic
+            method_used = "heuristic"
+            
             self.logger.error("screening_llm_fallback", error=str(exc))
             
             result = heuristic_screen_candidate(
@@ -112,7 +117,7 @@ class ScreeningAgent(BaseAgent):
                     "total_matched": len(result["matched_skills"]),
                     "total_missing": len(result["missing_skills"]),
                     "threshold_used": 0.6,
-                    "method": "llm" if "llm" not in str(exc) else "heuristic"
+                    "method": method_used
                 }
             },
             "confidence": result["confidence"],
