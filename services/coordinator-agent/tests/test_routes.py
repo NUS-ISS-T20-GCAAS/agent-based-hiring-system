@@ -89,6 +89,12 @@ class FakeRepository:
                 "job_id": "job-1",
                 "title": "Backend Engineer",
                 "job_description": "Need python fastapi and sql",
+                "job_requirements": {
+                    "required_skills": ["python", "fastapi", "sql"],
+                    "preferred_skills": ["docker"],
+                    "min_years_experience": 3,
+                    "education_level": "Bachelor's",
+                },
                 "status": "COMPLETED",
                 "candidates_count": 2,
             }
@@ -101,6 +107,12 @@ class FakeRepository:
             "job_id": job_id,
             "title": "Backend Engineer",
             "job_description": "Need python fastapi",
+            "job_requirements": {
+                "required_skills": ["python", "fastapi"],
+                "preferred_skills": ["docker"],
+                "min_years_experience": 3,
+                "education_level": "Bachelor's",
+            },
             "status": "COMPLETED",
             "candidates_count": 1,
         }
@@ -183,10 +195,13 @@ class RoutesReadApiTests(unittest.TestCase):
         jobs = list_jobs()
         self.assertEqual(len(jobs), 1)
         self.assertEqual(jobs[0]["job_id"], "job-1")
-        self.assertEqual(jobs[0]["required_skills"], ["need", "python", "fastapi", "sql"])
+        self.assertEqual(jobs[0]["required_skills"], ["python", "fastapi", "sql"])
+        self.assertEqual(jobs[0]["preferred_skills"], ["docker"])
+        self.assertEqual(jobs[0]["min_years_experience"], 3)
 
         job = get_job("job-1")
         self.assertEqual(job["title"], "Backend Engineer")
+        self.assertEqual(job["required_skills"], ["python", "fastapi"])
 
         candidates = list_candidates(job_id="job-1")
         self.assertEqual(len(candidates), 1)
@@ -238,6 +253,10 @@ class RoutesReadApiTests(unittest.TestCase):
         result = asyncio.run(upload_candidates(job_id="job-1", files=files))
         self.assertEqual(result["processed"], 2)
         self.assertEqual(result["failed"], 0)
+        first_request = run_job_mock.call_args_list[0].args[0]
+        self.assertEqual(first_request.required_skills, ["python", "fastapi"])
+        self.assertEqual(first_request.preferred_skills, ["docker"])
+        self.assertEqual(first_request.min_years_experience, 3)
 
 
 if __name__ == "__main__":

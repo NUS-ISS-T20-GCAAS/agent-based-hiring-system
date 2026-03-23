@@ -75,6 +75,12 @@ def run_job(
 
     entity_id = request.job_id
     correlation_id = str(uuid.uuid4())
+    job_requirements = {
+        "required_skills": request.required_skills,
+        "preferred_skills": request.preferred_skills,
+        "min_years_experience": request.min_years_experience,
+        "education_level": request.education_level,
+    }
 
     logger.info("job_received", entity_id=entity_id, correlation_id=correlation_id)
 
@@ -82,6 +88,7 @@ def run_job(
         repository.upsert_job(
             job_id=entity_id,
             job_description=request.job_description,
+            job_requirements=job_requirements,
         )
         candidate_id = repository.create_candidate(
             job_id=entity_id,
@@ -138,6 +145,7 @@ def run_job(
             input_data={
                 "job_description": request.job_description,
                 "parsed_resume": intake_artifact.payload,
+                "job_requirements": job_requirements,
             },
         )
 
