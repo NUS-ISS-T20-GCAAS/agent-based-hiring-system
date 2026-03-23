@@ -60,6 +60,21 @@ def _extract_required_skills(job_description: str | None) -> list[str]:
     return skills
 
 
+def _normalize_job_requirements(value: object) -> dict:
+    if not isinstance(value, dict):
+        return {}
+
+    required_skills = value.get("required_skills")
+    preferred_skills = value.get("preferred_skills")
+
+    return {
+        "required_skills": required_skills if isinstance(required_skills, list) else [],
+        "preferred_skills": preferred_skills if isinstance(preferred_skills, list) else [],
+        "min_years_experience": value.get("min_years_experience"),
+        "education_level": value.get("education_level"),
+    }
+
+
 def _extract_resume_text(raw: bytes) -> str:
     if not raw:
         return ""
@@ -74,12 +89,17 @@ def _extract_resume_text(raw: bytes) -> str:
 
 
 def _job_payload(row: dict) -> dict:
+    job_requirements = _normalize_job_requirements(row.get("job_requirements"))
+    required_skills = job_requirements["required_skills"] or _extract_required_skills(row.get("job_description"))
     return {
         "job_id": row["job_id"],
         "title": row.get("title") or row["job_id"],
         "job_description": row.get("job_description") or "",
         "status": (row.get("status") or "").lower(),
-        "required_skills": _extract_required_skills(row.get("job_description")),
+        "required_skills": required_skills,
+        "preferred_skills": job_requirements["preferred_skills"],
+        "min_years_experience": job_requirements["min_years_experience"],
+        "education_level": job_requirements["education_level"],
         "candidates_count": int(row.get("candidates_count") or 0),
     }
 
@@ -169,6 +189,7 @@ async def _process_upload_files(
 ) -> dict:
     job = _job_or_404(repository, job_id)
     job_description = job.get("job_description") or ""
+    job_requirements = _normalize_job_requirements(job.get("job_requirements"))
 
     results: list[dict] = []
     errors: list[dict] = []
@@ -183,6 +204,10 @@ async def _process_upload_files(
                 resume_url=f"upload://{filename}",
                 resume_text=resume_text,
                 job_description=job_description,
+                required_skills=job_requirements["required_skills"],
+                preferred_skills=job_requirements["preferred_skills"],
+                min_years_experience=job_requirements["min_years_experience"],
+                education_level=job_requirements["education_level"],
             )
             job_response = run_job(request)
             results.append(job_response.model_dump())

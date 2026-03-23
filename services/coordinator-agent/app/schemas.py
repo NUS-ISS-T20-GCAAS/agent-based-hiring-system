@@ -6,6 +6,10 @@ class JobRequest(BaseModel):
     resume_url: str
     job_description: str
     resume_text: Optional[str] = None
+    required_skills: list[str] = Field(default_factory=list)
+    preferred_skills: list[str] = Field(default_factory=list)
+    min_years_experience: Optional[int] = None
+    education_level: Optional[str] = None
 
 class RunRequest(BaseModel):
     entity_id: str

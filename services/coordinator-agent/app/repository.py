@@ -9,20 +9,21 @@ from app.schemas import Artifact
 
 
 class CoordinatorRepository:
-    def upsert_job(self, *, job_id: str, job_description: str) -> None:
+    def upsert_job(self, *, job_id: str, job_description: str, job_requirements: dict[str, Any]) -> None:
         with transaction() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    INSERT INTO jobs (job_id, title, job_description, status)
-                    VALUES (%s, %s, %s, 'PROCESSING')
+                    INSERT INTO jobs (job_id, title, job_description, job_requirements, status)
+                    VALUES (%s, %s, %s, %s::jsonb, 'PROCESSING')
                     ON CONFLICT (job_id)
                     DO UPDATE
                     SET
                         job_description = EXCLUDED.job_description,
+                        job_requirements = EXCLUDED.job_requirements,
                         updated_at = NOW()
                     """,
-                    (job_id, job_id, job_description),
+                    (job_id, job_id, job_description, Json(job_requirements or {})),
                 )
 
     def create_candidate(
@@ -275,13 +276,14 @@ class CoordinatorRepository:
                         j.job_id,
                         j.title,
                         j.job_description,
+                        j.job_requirements,
                         j.status,
                         j.created_at,
                         j.updated_at,
                         COUNT(c.candidate_id)::int AS candidates_count
                     FROM jobs j
                     LEFT JOIN candidates c ON c.job_id = j.job_id
-                    GROUP BY j.job_id, j.title, j.job_description, j.status, j.created_at, j.updated_at
+                    GROUP BY j.job_id, j.title, j.job_description, j.job_requirements, j.status, j.created_at, j.updated_at
                     ORDER BY j.created_at DESC
                     """
                 )
@@ -296,6 +298,7 @@ class CoordinatorRepository:
                         j.job_id,
                         j.title,
                         j.job_description,
+                        j.job_requirements,
                         j.status,
                         j.created_at,
                         j.updated_at,
@@ -303,7 +306,7 @@ class CoordinatorRepository:
                     FROM jobs j
                     LEFT JOIN candidates c ON c.job_id = j.job_id
                     WHERE j.job_id = %s
-                    GROUP BY j.job_id, j.title, j.job_description, j.status, j.created_at, j.updated_at
+                    GROUP BY j.job_id, j.title, j.job_description, j.job_requirements, j.status, j.created_at, j.updated_at
                     """,
                     (job_id,),
                 )

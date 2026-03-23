@@ -81,6 +81,9 @@ class CoordinatorRunJobTests(unittest.TestCase):
             resume_url="https://example.com/resume.pdf",
             resume_text="Python developer with 5 years",
             job_description="Need python fastapi",
+            required_skills=["python", "fastapi"],
+            preferred_skills=["docker"],
+            min_years_experience=3,
         )
 
         result = run_job(req, repository=FakeRepository())
@@ -99,6 +102,15 @@ class CoordinatorRunJobTests(unittest.TestCase):
         self.assertEqual(
             second_payload["input_data"]["parsed_resume"],
             intake_artifact["payload"],
+        )
+        self.assertEqual(
+            second_payload["input_data"]["job_requirements"],
+            {
+                "required_skills": ["python", "fastapi"],
+                "preferred_skills": ["docker"],
+                "min_years_experience": 3,
+                "education_level": None,
+            },
         )
 
     @patch("app.coordinator.time.sleep", return_value=None)
