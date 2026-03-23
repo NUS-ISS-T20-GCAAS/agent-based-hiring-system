@@ -1,0 +1,250 @@
+name: Terraform Infrastructure
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Terraform action to perform"
+        required: true
+        type: choice
+        options:
+          - plan
+          - apply
+          - destroy
+        default: plan
+      environment:
+        description: "Target environment"
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+        default: dev
+
+concurrency:
+  group: terraform-${{ github.event.inputs.environment || 'dev' }}
+  cancel-in-progress: false
+
+env:
+  TF_DIR: infra/terraform
+  TF_VERSION: "1.12.2"
+  AWS_REGION: "ap-southeast-1"
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  validate:
+    name: Validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive
+        working-directory: ${{ env.TF_DIR }}
+      - name: Terraform Init
+        run: terraform init -backend=false
+        working-directory: ${{ env.TF_DIR }}
+      - name: Terraform Validate
+        run: terraform validate
+        working-directory: ${{ env.TF_DIR }}
+
+  plan:
+    name: Plan
+    needs: validate
+    runs-on: ubuntu-latest
+    env:
+      TF_VAR_db_password: ${{ secrets.TF_VAR_DB_PASSWORD }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Terraform Init
+        run: terraform init
+        working-directory: ${{ env.TF_DIR }}
+      - name: Terraform Plan
+        id: plan
+        run: |
+          terraform plan \
+            -var="environment=${{ github.event.inputs.environment || 'dev' }}" \
+            -no-color \
+            -out=tfplan \
+            2>&1 | tee plan_output.txt
+        working-directory: ${{ env.TF_DIR }}
+      - name: Upload Plan Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-${{ github.event.inputs.environment || 'dev' }}
+          path: ${{ env.TF_DIR }}/tfplan
+          retention-days: 5
+
+  apply:
+    name: Apply
+    needs: plan
+    runs-on: ubuntu-latest
+    if: github.event.inputs.action == 'apply'
+    environment: ${{ github.event.inputs.environment }}
+    env:
+      TF_VAR_db_password: ${{ secrets.TF_VAR_DB_PASSWORD }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Terraform Init
+        run: terraform init
+        working-directory: ${{ env.TF_DIR }}
+      - name: Download Plan Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: tfplan-${{ github.event.inputs.environment }}
+          path: ${{ env.TF_DIR }}
+      - name: Terraform Apply
+        run: terraform apply -auto-approve tfplan
+        working-directory: ${{ env.TF_DIR }}
+      - name: Output Results
+        if: success()
+        run: terraform output -no-color
+        working-directory: ${{ env.TF_DIR }}
+
+  # ════════════════════════════════════════════════
+  #  Deploy K8s Manifests (after apply)
+  # ════════════════════════════════════════════════
+  deploy-k8s:
+    name: Deploy K8s
+    needs: apply
+    runs-on: ubuntu-latest
+    if: github.event.inputs.action == 'apply'
+    environment: ${{ github.event.inputs.environment }}
+
+    env:
+      TF_VAR_db_password: ${{ secrets.TF_VAR_DB_PASSWORD }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Terraform Init
+        run: terraform init
+        working-directory: ${{ env.TF_DIR }}
+
+      - name: Get AWS Account ID
+        id: aws-info
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          echo "account_id=$ACCOUNT_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Get Terraform Outputs
+        id: tf-outputs
+        run: |
+          EKS_CLUSTER=$(terraform output -raw eks_cluster_name)
+          RDS_HOST=$(terraform output -raw rds_hostname)
+          echo "eks_cluster=$EKS_CLUSTER" >> "$GITHUB_OUTPUT"
+          echo "rds_host=$RDS_HOST" >> "$GITHUB_OUTPUT"
+        working-directory: ${{ env.TF_DIR }}
+
+      - name: Configure kubectl
+        run: |
+          aws eks update-kubeconfig \
+            --name ${{ steps.tf-outputs.outputs.eks_cluster }} \
+            --region ${{ env.AWS_REGION }}
+
+      - name: Replace Placeholders in K8s Manifests
+        run: |
+          ACCOUNT_ID="${{ steps.aws-info.outputs.account_id }}"
+          REGION="${{ env.AWS_REGION }}"
+
+          echo "Replacing <ACCOUNT_ID> with $ACCOUNT_ID"
+          echo "Replacing <REGION> with $REGION"
+
+          for file in ${{ env.TF_DIR }}/k8s/*-deployment.yaml; do
+            sed -i "s/<ACCOUNT_ID>/$ACCOUNT_ID/g" "$file"
+            sed -i "s/<REGION>/$REGION/g" "$file"
+            echo "Updated: $file"
+          done
+
+      - name: Generate K8s Secrets
+        run: |
+          RDS_HOST="${{ steps.tf-outputs.outputs.rds_host }}"
+          DB_USER="${{ secrets.TF_VAR_DB_USERNAME || 'dbadmin' }}"
+          DB_PASS="${{ secrets.TF_VAR_DB_PASSWORD }}"
+          OPENAI_KEY="${{ secrets.OPENAI_API_KEY }}"
+
+          cat > ${{ env.TF_DIR }}/k8s/secrets.yaml <<EOF
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: hiring-system-secrets
+            namespace: services
+          type: Opaque
+          data:
+            openai-api-key: $(echo -n "$OPENAI_KEY" | base64 -w0)
+            db-host: $(echo -n "$RDS_HOST" | base64 -w0)
+            db-username: $(echo -n "$DB_USER" | base64 -w0)
+            db-password: $(echo -n "$DB_PASS" | base64 -w0)
+          EOF
+
+      - name: Apply K8s Manifests
+        run: |
+          echo "=== Applying Namespaces ==="
+          kubectl apply -f ${{ env.TF_DIR }}/k8s/namespaces.yaml
+
+          echo "=== Applying Secrets ==="
+          kubectl apply -f ${{ env.TF_DIR }}/k8s/secrets.yaml
+
+          echo "=== Applying Deployments ==="
+          kubectl apply -f ${{ env.TF_DIR }}/k8s/frontend-deployment.yaml
+          kubectl apply -f ${{ env.TF_DIR }}/k8s/coordinator-agent-deployment.yaml
+          kubectl apply -f ${{ env.TF_DIR }}/k8s/resume-intake-agent-deployment.yaml
+          kubectl apply -f ${{ env.TF_DIR }}/k8s/screening-agent-deployment.yaml
+
+      - name: Verify Deployment
+        run: |
+          echo "=== Frontend Pods ==="
+          kubectl get pods -n frontend
+          echo ""
+          echo "=== Service Pods ==="
+          kubectl get pods -n services
+          echo ""
+          echo "=== Frontend Service (LoadBalancer URL) ==="
+          kubectl get svc -n frontend
+          echo ""
+          echo "=== HPAs ==="
+          kubectl get hpa -n services

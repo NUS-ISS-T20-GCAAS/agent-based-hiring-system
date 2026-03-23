@@ -25,6 +25,9 @@ infra/terraform/
     ├── resume-intake-agent-deployment.yaml  # Fargate, HPA 1→5
     ├── screening-agent-deployment.yaml      # Fargate, HPA 1→5
     └── secrets.yaml.example                 # Template for credentials
+
+.github/workflows/
+└── terraform.yml            # CI/CD pipeline (manual dispatch)
 ```
 
 ---
@@ -44,7 +47,7 @@ graph TB
 
         subgraph PrivSub["Private Subnets (10.0.10.0/24, 10.0.11.0/24)"]
             subgraph EKS["EKS Cluster — Kubernetes 1.32"]
-                subgraph NodeGroup["Managed Node Group (t3.medium)"]
+                subgraph NodeGroup["Managed Node Group (t3.micro)"]
                     FE["frontend<br/>namespace<br/>(2 replicas)"]
                 end
                 subgraph Fargate["Fargate — Serverless"]
@@ -71,7 +74,7 @@ graph TB
 |-----------|---------|
 | **VPC** | `10.0.0.0/16`, 2 AZs (`ap-southeast-1a`, `1b`), single NAT (cost-optimized) |
 | **EKS** | K8s 1.32, public+private endpoint, API/audit/authenticator logging |
-| **Node Group** | `t3.medium`, 1–3 nodes, hosts `frontend` namespace |
+| **Node Group** | `t3.micro`, 1–3 nodes, hosts `frontend` namespace |
 | **Fargate** | `services` namespace — coordinator, resume-intake, screening agents |
 | **RDS** | PostgreSQL 15, gp3 storage (20–50 GB auto-scale), 7-day backups, encrypted |
 | **ECR** | 4 repos, immutable tags, scan-on-push, 10-image lifecycle cleanup |
@@ -85,9 +88,88 @@ graph TB
 | # | Item | How to Set Up |
 |---|------|---------------|
 | 1 | **AWS CLI & Credentials** | `aws configure` or set `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY`. Verify: `aws sts get-caller-identity` |
-| 2 | **IAM Permissions** | The IAM user/role needs: `EKS`, `EC2` (VPC/SG/Subnets), `ECR`, `RDS`, `IAM`, `ELB`, `CloudWatch Logs` |
+| 2 | **IAM Permissions** | Setup IAM policy based on **Option 1 or Option 2 below** |
 | 3 | **Terraform ≥ 1.5** | Verify: `terraform --version` |
 | 4 | **Database Password** | Set a strong password in `terraform.tfvars` (see Files to Update below) |
+| 5 | **GitHub Secrets** (for CI/CD) | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `TF_VAR_DB_PASSWORD` |
+
+---
+
+### IAM Permissions Setup (For CI/CD & Local Deploy)
+
+#### Option 1: Minimum Privilege Custom Policy (Recommended)
+
+Create an IAM policy with this exact JSON and attach it:
+
+<details>
+<summary>Click to show IAM JSON Policy</summary>
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ec2:*Vpc*", "ec2:*Subnet*", "ec2:*InternetGateway*", "ec2:*NatGateway*",
+        "ec2:*Address*", "ec2:*Route*", "ec2:*SecurityGroup*", "ec2:*Tags*",
+        "ec2:DescribeAvailabilityZones", "ec2:DescribeAccountAttributes", "ec2:DescribeNetworkInterfaces"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "eks:CreateCluster", "eks:DeleteCluster", "eks:DescribeCluster", "eks:UpdateCluster*",
+        "eks:CreateNodegroup", "eks:DeleteNodegroup", "eks:DescribeNodegroup", "eks:UpdateNodegroup*",
+        "eks:CreateFargateProfile", "eks:DeleteFargateProfile", "eks:DescribeFargateProfile",
+        "eks:*Tag*", "eks:List*"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ecr:*Repository*", "ecr:*LifecyclePolicy*", "ecr:PutImageScanningConfiguration", "ecr:*Tag*"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "rds:*DBInstance*", "rds:*DBSubnetGroup*", "rds:*Tag*"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "iam:*Role*", "iam:PassRole", "iam:*OpenIDConnectProvider*"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": ["logs:*LogGroup*", "sts:GetCallerIdentity"],
+      "Resource": "*"
+    }
+  ]
+}
+```
+</details>
+
+#### Option 2: AWS Managed Policies (Quick Setup)
+
+Attach these managed policies to the IAM user/role:
+- `AmazonVPCFullAccess`
+- `AmazonEKSClusterPolicy`
+- `AmazonEKSServicePolicy`
+- `AmazonEC2ContainerRegistryFullAccess`
+- `AmazonRDSFullAccess`
+- `IAMFullAccess`
+- `CloudWatchLogsFullAccess`
+
+> ⚠️ Option 2 grants broader permissions than needed. Use **Option 1** for production.
 
 ### Required After `terraform apply`
 
@@ -114,7 +196,7 @@ db_password = "YOUR_STRONG_PASSWORD_HERE"  # ⚠️ Required — replace before 
 
 # Optional overrides (defaults are already set):
 # aws_region         = "ap-southeast-1"
-# node_instance_type = "t3.medium"
+# node_instance_type = "t3.micro"
 # db_instance_class  = "db.t3.micro"
 ```
 
@@ -237,6 +319,44 @@ kubectl delete -f k8s/
 # Destroy all AWS resources
 terraform destroy -var-file=terraform.tfvars
 ```
+
+---
+
+## CI/CD Pipeline (GitHub Actions)
+
+Alternatively, deploy via GitHub Actions using `.github/workflows/terraform.yml`.
+
+### Pipeline Structure
+
+```mermaid
+graph LR
+    D["Manual Dispatch"] --> V["Validate<br/>fmt + validate"]
+    V --> P["Plan<br/>(always runs)"]
+    P -->|"action == apply"| A["Apply<br/>(gated)"]
+    P -->|"action == plan"| S["Stop here"]
+```
+
+### Setup
+
+1. Go to **GitHub → Settings → Secrets and variables → Actions**
+2. Add these repository secrets:
+
+| Secret | Value |
+|--------|-------|
+| `AWS_ACCESS_KEY_ID` | Your AWS access key |
+| `AWS_SECRET_ACCESS_KEY` | Your AWS secret key |
+| `TF_VAR_DB_PASSWORD` | Database password |
+
+### Usage
+
+1. Go to **Actions → Terraform Infrastructure → Run workflow**
+2. Select action (`plan` or `apply`) and environment (`dev`)
+3. Click **Run workflow**
+
+| Action | Effect |
+|--------|--------|
+| `plan` | Validate + preview changes (read-only, safe) |
+| `apply` | Validate + plan + deploy real infrastructure |
 
 ---
 
