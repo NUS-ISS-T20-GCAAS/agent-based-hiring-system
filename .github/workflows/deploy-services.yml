@@ -1,0 +1,41 @@
+name: Deploy Services
+
+on:
+  workflow_run:
+    workflows: ["Build Services"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+        default: staging
+      image_tag:
+        description: "Container image tag to deploy"
+        required: true
+        type: string
+
+jobs:
+  deploy:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.environment || 'dev' }}
+    env:
+      IMAGE_TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.image_tag || github.event.workflow_run.head_sha }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show deployment target
+        run: |
+          echo "Environment: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.environment || 'dev' }}"
+          echo "Image tag: ${IMAGE_TAG}"
+
+      - name: Deploy via Docker Compose
+        run: |
+          docker compose -f infra/docker-compose.yml up -d
