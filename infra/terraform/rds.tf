@@ -65,15 +65,14 @@ resource "aws_db_instance" "postgres" {
   publicly_accessible    = false
   multi_az               = false # Single-AZ for dev, set true for prod
 
-  # Storage
-  allocated_storage     = 20
-  max_allocated_storage = 50 # Autoscaling up to 50 GB
-  storage_type          = "gp3"
-  storage_encrypted     = true
+  # Storage (Free Tier: 20 GB gp2, no encryption on t3.micro)
+  allocated_storage = 20
+  storage_type      = "gp2"
+  storage_encrypted = false
 
   # Backup & Maintenance
-  backup_retention_period = 7
-  backup_window           = "03:00-04:00"
+  # Free Tier: backup_retention_period must be 0 (automated backups not supported)
+  backup_retention_period = 0
   maintenance_window      = "sun:05:00-sun:06:00"
 
   # Dev convenience — disable for production!
@@ -81,8 +80,8 @@ resource "aws_db_instance" "postgres" {
   final_snapshot_identifier = var.environment == "dev" ? null : "${local.cluster_name}-final-snapshot"
   deletion_protection       = var.environment == "dev" ? false : true
 
-  # Performance Insights (free tier for db.t3.micro)
-  performance_insights_enabled = true
+  # Performance Insights — not supported on Free Tier db.t3.micro
+  performance_insights_enabled = false
 
   tags = {
     Name = "${local.cluster_name}-postgres"

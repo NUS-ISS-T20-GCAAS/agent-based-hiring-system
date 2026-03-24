@@ -158,16 +158,25 @@ Create an IAM policy with this exact JSON and attach it:
 ```
 </details>
 
-#### Option 2: AWS Managed Policies (Quick Setup)
+#### Option 2: AWS Managed Policies + Custom EKS Policy (Quick Setup)
 
-Attach these managed policies to the IAM user/role:
+Attach these **managed policies** to the IAM user/role:
 - `AmazonVPCFullAccess`
-- `AmazonEKSClusterPolicy`
-- `AmazonEKSServicePolicy`
+- `AmazonEC2FullAccess`
 - `AmazonEC2ContainerRegistryFullAccess`
 - `AmazonRDSFullAccess`
 - `IAMFullAccess`
 - `CloudWatchLogsFullAccess`
+
+Then add a **custom inline policy** named `EKS-FullAccess` (AWS has no managed policy for EKS user-level management):
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    { "Effect": "Allow", "Action": "eks:*", "Resource": "*" }
+  ]
+}
+```
 
 > ⚠️ Option 2 grants broader permissions than needed. Use **Option 1** for production.
 
