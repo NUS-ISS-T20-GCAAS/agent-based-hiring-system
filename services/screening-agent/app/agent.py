@@ -1,6 +1,7 @@
 from app.base_agent import BaseAgent
 from app.llm import ScreeningLLM
 from app.worker import coerce_screening_result, heuristic_screen_candidate
+from app.config import QUALIFICATION_THRESHOLD, REVIEW_BAND, REVIEW_CONFIDENCE_FLOOR
 
 
 class ScreeningAgent(BaseAgent):
@@ -101,7 +102,33 @@ class ScreeningAgent(BaseAgent):
 
         # Enhance result with additional decision info
         decision = "PASS" if result["meets_threshold"] else "FAIL"
-        
+
+        # ── Human review flag ────────────────────────────────────────────────
+        # Flag for human review when any of these conditions are true:
+        #   1. Score is within REVIEW_BAND of the threshold (borderline case)
+        #   2. Confidence is below REVIEW_CONFIDENCE_FLOOR (uncertain result)
+        #   3. LLM was unavailable and heuristic was used instead
+        needs_human_review = (
+            abs(result["qualification_score"] - QUALIFICATION_THRESHOLD) <= REVIEW_BAND
+            or result["confidence"] < REVIEW_CONFIDENCE_FLOOR
+            or method_used == "heuristic"
+        )
+
+        review_reasons = []
+        if abs(result["qualification_score"] - QUALIFICATION_THRESHOLD) <= REVIEW_BAND:
+            review_reasons.append(
+                f"score {result['qualification_score']:.0%} is within "
+                f"{REVIEW_BAND:.0%} of threshold {QUALIFICATION_THRESHOLD:.0%}"
+            )
+        if result["confidence"] < REVIEW_CONFIDENCE_FLOOR:
+            review_reasons.append(
+                f"confidence {result['confidence']:.0%} below floor "
+                f"{REVIEW_CONFIDENCE_FLOOR:.0%}"
+            )
+        if method_used == "heuristic":
+            review_reasons.append("LLM unavailable — heuristic fallback used")
+        # ─────────────────────────────────────────────────────────────────────
+
         # Build detailed explanation
         explanation = self._build_explanation(result, decision)
 
@@ -110,15 +137,19 @@ class ScreeningAgent(BaseAgent):
                 "qualification_score": result["qualification_score"],
                 "meets_threshold": result["meets_threshold"],
                 "matched_skills": result["matched_skills"],
-                "missing_skills": result["missing_skills"][:10],  # Limit to top 10
+                "missing_skills": result["missing_skills"][:10],
                 "years_experience": result["years_experience"],
                 "decision": decision,
+                "needs_human_review": needs_human_review,
+                "review_reasons": review_reasons,
                 "details": {
                     "total_matched": len(result["matched_skills"]),
                     "total_missing": len(result["missing_skills"]),
-                    "threshold_used": 0.6,
-                    "method": method_used
-                }
+                    "threshold_used": QUALIFICATION_THRESHOLD,
+                    "review_band": REVIEW_BAND,
+                    "confidence_floor": REVIEW_CONFIDENCE_FLOOR,
+                    "method": method_used,
+                },
             },
             "confidence": result["confidence"],
             "explanation": explanation,

@@ -25,6 +25,19 @@ services:
       timeout: 2s
       retries: 5
 
+  audit-agent:
+    build: ./audit-agent
+    ports:
+      - "8003:8000"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o-mini}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 60s
+      timeout: 2s
+      retries: 5
+
   coordinator:
     build: ./coordinator-agent
     ports:

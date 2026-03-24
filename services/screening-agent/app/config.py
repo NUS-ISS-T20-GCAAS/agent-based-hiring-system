@@ -16,6 +16,12 @@ REQUIRED_SKILLS_WEIGHT = float(os.getenv("REQUIRED_SKILLS_WEIGHT", "0.7"))
 PREFERRED_SKILLS_WEIGHT = float(os.getenv("PREFERRED_SKILLS_WEIGHT", "0.3"))
 EXPERIENCE_BONUS_WEIGHT = float(os.getenv("EXPERIENCE_BONUS_WEIGHT", "0.1"))
 
+# Human review triggers
+# Decisions within this band around the threshold are flagged for review
+REVIEW_BAND = float(os.getenv("REVIEW_BAND", "0.05"))
+# Confidence below this value triggers review regardless of score
+REVIEW_CONFIDENCE_FLOOR = float(os.getenv("REVIEW_CONFIDENCE_FLOOR", "0.7"))
+
 # Service Configuration
 SERVICE_NAME = os.getenv("SERVICE_NAME", "screening-agent")
 PORT = int(os.getenv("PORT", "8001"))
