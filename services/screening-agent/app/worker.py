@@ -3,6 +3,8 @@ Worker utility functions for screening
 Provides heuristic fallback and result normalization
 """
 
+from app.config import QUALIFICATION_THRESHOLD
+
 
 def heuristic_screen_candidate(
     *, 
@@ -80,8 +82,8 @@ def heuristic_screen_candidate(
     # Weighted qualification score: 70% skills + 30% experience
     qualification_score = round((skill_score * 0.7) + (experience_score * 0.3), 3)
     
-    # Pass threshold is 0.6 (60%)
-    meets_threshold = qualification_score >= 0.6
+    # Pass threshold driven by config — not hardcoded
+    meets_threshold = qualification_score >= QUALIFICATION_THRESHOLD
     
     # Confidence based on data quality
     # Base confidence 0.65, up to 0.90 with more skills
@@ -92,7 +94,8 @@ def heuristic_screen_candidate(
         f"Heuristic screening: score={qualification_score:.1%} "
         f"(skills={skill_score:.1%}, experience={experience_score:.1%}); "
         f"matched={len(matched_skills)}/{len(required_skills)} skills; "
-        f"years={years_experience}"
+        f"years={years_experience}; "
+        f"threshold={QUALIFICATION_THRESHOLD:.0%}"
     )
     
     return {
@@ -146,10 +149,10 @@ def coerce_screening_result(result: dict) -> dict:
     except (TypeError, ValueError):
         years_experience = 0
     
-    # Extract or compute meets_threshold
+    # Extract or compute meets_threshold using configurable value
     meets_threshold = result.get("meets_threshold")
     if meets_threshold is None:
-        meets_threshold = qualification_score >= 0.6
+        meets_threshold = qualification_score >= QUALIFICATION_THRESHOLD
     else:
         meets_threshold = bool(meets_threshold)
     

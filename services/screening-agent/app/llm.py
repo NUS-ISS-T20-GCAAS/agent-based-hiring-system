@@ -9,7 +9,7 @@ from typing import Any
 
 from openai import OpenAI
 
-from app.config import OPENAI_API_KEY, OPENAI_MODEL, OPENAI_TIMEOUT_SEC
+from app.config import OPENAI_API_KEY, OPENAI_MODEL, OPENAI_TIMEOUT_SEC, QUALIFICATION_THRESHOLD
 
 
 def _extract_json(text: str) -> dict[str, Any]:
@@ -118,24 +118,39 @@ class ScreeningLLM:
             "You are a qualification screening agent for a hiring system. "
             "Your job is to evaluate candidates against job requirements and provide "
             "structured scoring data.\n\n"
-            
+
+            # ── Bias guard ──────────────────────────────────────────────────
+            "FAIRNESS REQUIREMENT — you must strictly follow these rules:\n"
+            "- Evaluate ONLY technical skills, years of relevant experience, "
+            "and stated qualifications.\n"
+            "- You MUST NOT consider, infer, or be influenced by: candidate name, "
+            "gender, age, nationality, ethnicity, religion, marital status, "
+            "socioeconomic background, or the prestige/location of educational "
+            "institutions.\n"
+            "- Do NOT use graduation year as a proxy for age.\n"
+            "- Do NOT penalise non-linear career paths or employment gaps.\n"
+            "- If demographic signals are present in the resume, ignore them "
+            "entirely and focus only on skills and experience.\n\n"
+            # ────────────────────────────────────────────────────────────────
+
             "You must return ONLY valid JSON with these exact keys:\n"
             "- qualification_score: float 0-1 (overall qualification)\n"
-            "- meets_threshold: boolean (true if score >= 0.6)\n"
+            f"- meets_threshold: boolean (true if score >= {QUALIFICATION_THRESHOLD})\n"
             "- matched_skills: array of lowercase skill strings the candidate has\n"
             "- missing_skills: array of lowercase required skills the candidate lacks\n"
             "- years_experience: integer (candidate's years of experience)\n"
             "- confidence: float 0-1 (your confidence in this assessment)\n"
             "- explanation: string (2-3 sentence explanation of your scoring)\n\n"
-            
+
             "Scoring guidelines:\n"
             "- Weight required skills heavily (70% of score)\n"
             "- Preferred skills add bonus (30% of score)\n"
             "- Experience can add up to 10% bonus\n"
             "- Be conservative: only match skills you're confident about\n"
             "- Normalize all skills to lowercase\n"
-            "- Threshold for passing is 0.6 (60%)\n\n"
-            
+            f"- Threshold for passing is {QUALIFICATION_THRESHOLD} "
+            f"({QUALIFICATION_THRESHOLD:.0%})\n\n"
+
             "Return ONLY the JSON object, no other text."
         )
 
