@@ -1,0 +1,43 @@
+name: Deploy Frontend
+
+on:
+  workflow_run:
+    workflows: ["Build Frontend"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+        default: staging
+      image_tag:
+        description: "Frontend image tag to deploy"
+        required: true
+        type: string
+
+jobs:
+  deploy:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.environment || 'dev' }}
+    env:
+      IMAGE_TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.image_tag || github.event.workflow_run.head_sha }}
+    steps:
+      - name: Show deployment target
+        run: |
+          echo "Environment: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.environment || 'dev' }}"
+          echo "Image tag: ${IMAGE_TAG}"
+
+      - name: Deploy
+        run: |
+          REPO_LOWER=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+
+          docker pull ghcr.io/${REPO_LOWER}/frontend:${IMAGE_TAG}
+          docker run -d -p 3000:3000 \
+            ghcr.io/${REPO_LOWER}/frontend:${IMAGE_TAG}
