@@ -356,7 +356,8 @@ graph LR
 | Action | Effect |
 |--------|--------|
 | `plan` | Validate + preview changes (read-only, safe) |
-| `apply` | Validate + plan + deploy real infrastructure |
+| `apply` | Validate + plan + deploy real infrastructure + deploy K8s manifests |
+| `deploy-k8s`| Skips terraform changes; retrieves EKS outputs and directly deploys K8s YAMLs |
 
 ---
 
