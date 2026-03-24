@@ -324,17 +324,19 @@ terraform destroy -var-file=terraform.tfvars
 
 ## CI/CD Pipeline (GitHub Actions)
 
-Alternatively, deploy via GitHub Actions using `.github/workflows/terraform.yml`.
+Deploy via GitHub Actions using `.github/workflows/terraform.yml`.
 
 ### Pipeline Structure
 
 ```mermaid
 graph LR
     D["Manual Dispatch"] --> V["Validate<br/>fmt + validate"]
-    V --> P["Plan<br/>(always runs)"]
-    P -->|"action == apply"| A["Apply<br/>(gated)"]
-    P -->|"action == plan"| S["Stop here"]
+    V --> P["Plan"]
+    P --> A["Apply"]
+    A --> K["Deploy K8s"]
 ```
+
+All jobs run **automatically end-to-end** when triggered — no environment approval gates needed.
 
 ### Setup
 
@@ -346,18 +348,13 @@ graph LR
 | `AWS_ACCESS_KEY_ID` | Your AWS access key |
 | `AWS_SECRET_ACCESS_KEY` | Your AWS secret key |
 | `TF_VAR_DB_PASSWORD` | Database password |
+| `OPENAI_API_KEY` | OpenAI API key (for K8s secrets) |
 
 ### Usage
 
 1. Go to **Actions → Terraform Infrastructure → Run workflow**
-2. Select action (`plan` or `apply`) and environment (`dev`)
-3. Click **Run workflow**
-
-| Action | Effect |
-|--------|--------|
-| `plan` | Validate + preview changes (read-only, safe) |
-| `apply` | Validate + plan + deploy real infrastructure + deploy K8s manifests |
-| `deploy-k8s`| Skips terraform changes; retrieves EKS outputs and directly deploys K8s YAMLs |
+2. Click **Run workflow**
+3. All 4 jobs execute automatically: Validate → Plan → Apply → Deploy K8s
 
 ---
 

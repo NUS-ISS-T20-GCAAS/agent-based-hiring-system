@@ -10,7 +10,6 @@ on:
         options:
           - plan
           - apply
-          - destroy
         default: plan
       environment:
         description: "Target environment"
@@ -21,10 +20,6 @@ on:
           - staging
           - prod
         default: dev
-
-concurrency:
-  group: terraform-${{ github.event.inputs.environment || 'dev' }}
-  cancel-in-progress: false
 
 env:
   TF_DIR: infra/terraform
@@ -98,7 +93,6 @@ jobs:
     name: Apply
     needs: plan
     runs-on: ubuntu-latest
-    if: github.event.inputs.action == 'apply'
     environment: terraform-${{ github.event.inputs.environment }}
     env:
       TF_VAR_db_password: ${{ secrets.TF_VAR_DB_PASSWORD }}
@@ -138,12 +132,9 @@ jobs:
     name: Deploy K8s
     needs: plan
     runs-on: ubuntu-latest
-    if: github.event.inputs.action == 'apply'
     environment: k8s-${{ github.event.inputs.environment }}
-
     env:
       TF_VAR_db_password: ${{ secrets.TF_VAR_DB_PASSWORD }}
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
