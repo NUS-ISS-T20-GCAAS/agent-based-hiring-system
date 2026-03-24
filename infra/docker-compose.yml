@@ -71,6 +71,25 @@ services:
     networks:
       - app-net  
 
+  audit-agent:
+    build:
+      context: ../services/audit-agent
+      dockerfile: Dockerfile
+    ports:
+      - "8003:8000"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o-mini}
+    depends_on:
+      - postgres
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 60s
+      timeout: 2s
+      retries: 5
+    networks:
+      - app-net  
+
   postgres:
     image: postgres:15
     environment:

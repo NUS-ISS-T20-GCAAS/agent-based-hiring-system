@@ -1,0 +1,65 @@
+from app.base_agent import BaseAgent
+from app.llm import AuditLLM
+from app.worker import coerce_audit_result, heuristic_audit_check
+
+
+class AuditAgent(BaseAgent):
+    def __init__(self, agent_type, shared_memory):
+        super().__init__(agent_type=agent_type, shared_memory=shared_memory)
+        self.llm = AuditLLM()
+
+    def artifact_type(self) -> str:
+        return "audit_bias_check_result"
+
+    def handle(self, input_data):
+        method_used = "llm"
+
+        try:
+            llm_result = self.llm.audit(
+                job_id=input_data.get("job_id"),
+                stats=input_data.get("stats") or {},
+                candidates=input_data.get("candidates") or [],
+                decisions=input_data.get("decisions") or [],
+            )
+            result = coerce_audit_result(llm_result)
+        except Exception as exc:
+            method_used = "heuristic"
+            self.logger.error("audit_llm_fallback", error=str(exc))
+            result = heuristic_audit_check(
+                job_id=input_data.get("job_id"),
+                stats=input_data.get("stats") or {},
+                candidates=input_data.get("candidates") or [],
+                decisions=input_data.get("decisions") or [],
+            )
+
+        explanation = self._build_explanation(result, method_used)
+
+        return {
+            "payload": {
+                "job_id": result["job_id"],
+                "selection_rate": result["selection_rate"],
+                "total_candidates": result["total_candidates"],
+                "shortlisted": result["shortlisted"],
+                "bias_flags": result["bias_flags"],
+                "risk_level": result["risk_level"],
+                "review_required": result["review_required"],
+                "recommendations": result["recommendations"],
+                "details": {
+                    "method": method_used,
+                    "data_completeness": result["data_completeness"],
+                },
+            },
+            "confidence": result["confidence"],
+            "explanation": explanation,
+        }
+
+    def _build_explanation(self, result: dict, method_used: str) -> str:
+        flags = ", ".join(result["bias_flags"]) if result["bias_flags"] else "none"
+        recommendations = "; ".join(result["recommendations"][:2]) if result["recommendations"] else "none"
+        return (
+            f"Audit completed with {method_used} analysis; "
+            f"risk={result['risk_level']}; "
+            f"selection_rate={result['selection_rate']:.1%}; "
+            f"bias_flags={flags}; "
+            f"recommendations={recommendations}"
+        )
