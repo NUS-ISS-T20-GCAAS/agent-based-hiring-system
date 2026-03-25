@@ -150,6 +150,21 @@ Create an IAM policy with this exact JSON and attach it:
     },
     {
       "Effect": "Allow",
+      "Action": [
+        "s3:CreateBucket", "s3:ListBucket", "s3:GetBucketVersioning", "s3:PutBucketVersioning",
+        "s3:GetObject", "s3:PutObject", "s3:DeleteObject"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:PutItem", "dynamodb:GetItem", "dynamodb:DeleteItem", "dynamodb:DescribeTable", "dynamodb:CreateTable"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
       "Action": ["logs:*LogGroup*", "sts:GetCallerIdentity"],
       "Resource": "*"
     }
@@ -167,6 +182,8 @@ Attach these **managed policies** to the IAM user/role:
 - `AmazonRDSFullAccess`
 - `IAMFullAccess`
 - `CloudWatchLogsFullAccess`
+- `AmazonS3FullAccess`
+- `AmazonDynamoDBFullAccess`
 
 Then add a **custom inline policy** named `EKS-FullAccess` (AWS has no managed policy for EKS user-level management):
 ```json

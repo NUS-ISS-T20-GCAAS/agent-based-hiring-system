@@ -105,5 +105,5 @@ variable "db_password" {
 variable "db_engine_version" {
   description = "PostgreSQL engine version"
   type        = string
-  default     = "15.7"
+  default     = "15"
 }
