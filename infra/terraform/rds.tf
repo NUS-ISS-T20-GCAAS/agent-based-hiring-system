@@ -4,7 +4,7 @@
 
 # ── DB Subnet Group ──────────────────────────
 resource "aws_db_subnet_group" "main" {
-  name       = "${local.cluster_name}-db-subnet"
+  name = "${local.cluster_name}-db-subnet"
   # subnet_ids = aws_subnet.private[*].id
   # Using public subnets for dev so the DB is reachable from the internet (for dev purpose and need to revert back to private subnets for production)
   subnet_ids = aws_subnet.public[*].id
