@@ -3,15 +3,6 @@ name: Terraform Infrastructure
 on:
   workflow_dispatch:
     inputs:
-      action:
-        description: "Terraform action to perform"
-        required: true
-        type: choice
-        options:
-          - plan
-          - apply
-          - import
-        default: plan
       environment:
         description: "Target environment"
         required: true
@@ -240,45 +231,3 @@ jobs:
           echo ""
           echo "=== HPAs ==="
           kubectl get hpa -n services
-
-  # ════════════════════════════════════════════════
-  #  Import Job (Only runs when action = import)
-  # ════════════════════════════════════════════════
-  import:
-    name: Import Resources
-    runs-on: ubuntu-latest
-    environment: terraform-${{ github.event.inputs.environment }}
-    env:
-      TF_VAR_db_password: ${{ secrets.TF_VAR_DB_PASSWORD }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: ${{ env.TF_VERSION }}
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-      - name: Terraform Init
-        run: terraform init
-        working-directory: ${{ env.TF_DIR }}
-      - name: Terraform Import
-        run: |
-          # Import existing ECR repos
-          terraform import 'aws_ecr_repository.services["frontend"]' "hiring-system/frontend" || true
-          terraform import 'aws_ecr_repository.services["coordinator-agent"]' "hiring-system/coordinator-agent" || true
-          terraform import 'aws_ecr_repository.services["resume-intake-agent"]' "hiring-system/resume-intake-agent" || true
-          terraform import 'aws_ecr_repository.services["screening-agent"]' "hiring-system/screening-agent" || true
-
-          # Import existing IAM roles
-          terraform import aws_iam_role.eks_cluster "hiring-system-${{ github.event.inputs.environment || 'dev' }}-eks-cluster-role" || true
-          terraform import aws_iam_role.eks_node_group "hiring-system-${{ github.event.inputs.environment || 'dev' }}-eks-node-role" || true
-          terraform import aws_iam_role.fargate_pod_execution "hiring-system-${{ github.event.inputs.environment || 'dev' }}-fargate-pod-role" || true
-
-          # Import existing DB subnet group
-          terraform import aws_db_subnet_group.main "hiring-system-${{ github.event.inputs.environment || 'dev' }}-db-subnet" || true
-        working-directory: ${{ env.TF_DIR }}
