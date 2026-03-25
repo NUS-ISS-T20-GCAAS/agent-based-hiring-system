@@ -12,14 +12,14 @@ terraform {
     }
   }
 
-  # ── Remote backend (uncomment for team use) ──
-  # backend "s3" {
-  #   bucket         = "hiring-system-terraform-state"
-  #   key            = "dev/terraform.tfstate"
-  #   region         = "ap-southeast-1"
-  #   dynamodb_table = "terraform-locks"
-  #   encrypt        = true
-  # }
+  # ── Remote backend (S3 + DynamoDB locking) ──
+  backend "s3" {
+    bucket         = "hiring-system-terraform-state"
+    key            = "dev/terraform.tfstate"
+    region         = "ap-southeast-1"
+    dynamodb_table = "terraform-locks"
+    encrypt        = true
+  }
 }
 
 provider "aws" {
