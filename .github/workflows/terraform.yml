@@ -186,7 +186,7 @@ jobs:
       - name: Generate K8s Secrets
         run: |
           RDS_HOST="${{ steps.tf-outputs.outputs.rds_host }}"
-          DB_USER="${{ secrets.TF_VAR_DB_USERNAME || 'dbadmin' }}"
+          DB_USER="${{ secrets.TF_VAR_DB_USERNAME || 'user' }}"
           DB_PASS="${{ secrets.TF_VAR_DB_PASSWORD }}"
           OPENAI_KEY="${{ secrets.OPENAI_API_KEY }}"
 
