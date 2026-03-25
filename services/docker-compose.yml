@@ -44,6 +44,7 @@ services:
       - "8000:8000"
     environment:
       - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o-mini}
+      - AUDIT_AGENT_URL=http://audit-agent:8000
       - DB_HOST=postgres
       - DB_PORT=5432
       - DB_NAME=hiring_system
@@ -53,6 +54,8 @@ services:
       resume-intake-agent:
         condition: service_healthy
       screening-agent:
+        condition: service_healthy
+      audit-agent:
         condition: service_healthy
 
   postgres:

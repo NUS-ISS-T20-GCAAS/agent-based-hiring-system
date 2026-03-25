@@ -387,6 +387,32 @@ class CoordinatorRepository:
                 )
                 return list(cur.fetchall())
 
+    def list_artifacts(self, *, job_id: str | None = None) -> list[dict[str, Any]]:
+        with transaction() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT
+                        artifact_id::text AS artifact_id,
+                        job_id AS entity_id,
+                        candidate_id::text AS candidate_id,
+                        correlation_id::text AS correlation_id,
+                        agent_id,
+                        agent_type,
+                        artifact_type,
+                        payload,
+                        confidence,
+                        explanation,
+                        version,
+                        created_at
+                    FROM artifacts
+                    WHERE (%s::text IS NULL OR job_id = %s)
+                    ORDER BY created_at ASC
+                    """,
+                    (job_id, job_id),
+                )
+                return list(cur.fetchall())
+
     def get_stats(self, *, job_id: str | None = None) -> dict[str, Any]:
         with transaction() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:

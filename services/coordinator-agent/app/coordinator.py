@@ -1,17 +1,80 @@
 import uuid
 import time
+from datetime import date, datetime
+from decimal import Decimal
 import requests
 from fastapi import HTTPException
 
 from app.schemas import JobRequest, JobResponse, RunRequest, Artifact
 from app.logger import get_logger
-from app.config import RESUME_INTAKE_AGENT_URL, SCREENING_AGENT_URL, REQUEST_TIMEOUT
+from app.config import AUDIT_AGENT_URL, RESUME_INTAKE_AGENT_URL, SCREENING_AGENT_URL, REQUEST_TIMEOUT
 from app.repository import CoordinatorRepository
 
 logger = get_logger("coordinator")
 
 MAX_RETRIES = 3
 RETRY_DELAY_SEC = 0.5
+
+
+def _json_safe(value):
+    if isinstance(value, Decimal):
+        return float(value)
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {key: _json_safe(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_json_safe(item) for item in value]
+    return value
+
+
+def _screening_status(screening_payload: dict | None) -> tuple[str, str]:
+    screening_payload = screening_payload or {}
+    meets_threshold = bool(screening_payload.get("meets_threshold"))
+    recommendation = "SHORTLIST" if meets_threshold else "REJECT"
+    status = "shortlisted" if meets_threshold else "rejected"
+    return status, recommendation
+
+
+def _build_audit_input(
+    *,
+    repository: CoordinatorRepository,
+    job_id: str,
+    candidate_id: str,
+    screening_payload: dict | None,
+) -> dict:
+    screening_payload = screening_payload if isinstance(screening_payload, dict) else {}
+    candidate_status, recommendation = _screening_status(screening_payload)
+
+    stats = repository.get_stats(job_id=job_id)
+    if screening_payload.get("meets_threshold"):
+        stats = {
+            **stats,
+            "shortlisted": int(stats.get("shortlisted") or 0) + 1,
+        }
+
+    candidates = repository.list_candidates(job_id=job_id)
+    patched_candidates: list[dict] = []
+    for row in candidates:
+        candidate = dict(row)
+        if candidate.get("id") == candidate_id:
+            candidate["status"] = candidate_status
+            candidate["recommendation"] = recommendation
+            candidate["scores"] = {
+                "qualification": screening_payload.get("qualification_score") or 0.0,
+                "skills": candidate.get("skills_score") or 0.0,
+                "composite": candidate.get("composite_score") or 0.0,
+            }
+        patched_candidates.append(candidate)
+
+    decisions = repository.list_artifacts(job_id=job_id)
+
+    return {
+        "job_id": job_id,
+        "stats": stats,
+        "candidates": patched_candidates,
+        "decisions": decisions,
+    }
 
 
 def _post_with_retries(
@@ -37,7 +100,7 @@ def _post_with_retries(
 
             resp = requests.post(
                 url,
-                json=run_req.model_dump(),
+                json=_json_safe(run_req.model_dump()),
                 timeout=REQUEST_TIMEOUT,
             )
             resp.raise_for_status()
@@ -161,6 +224,33 @@ def run_job(
             candidate_id=candidate_id,
             artifact=screening_artifact,
         )
+
+        current_step = "audit"
+        repository.update_workflow_step(run_id=run_id, current_step=current_step)
+
+        audit_request = RunRequest(
+            entity_id=entity_id,
+            correlation_id=correlation_id,
+            input_data=_build_audit_input(
+                repository=repository,
+                job_id=entity_id,
+                candidate_id=candidate_id,
+                screening_payload=screening_artifact.payload if isinstance(screening_artifact.payload, dict) else None,
+            ),
+        )
+
+        audit_artifact = _post_with_retries(
+            target="audit",
+            url=f"{AUDIT_AGENT_URL}/run",
+            run_req=audit_request,
+            entity_id=entity_id,
+            correlation_id=correlation_id,
+        )
+        repository.save_artifact(
+            job_id=entity_id,
+            candidate_id=candidate_id,
+            artifact=audit_artifact,
+        )
         repository.complete_workflow(
             job_id=entity_id,
             candidate_id=candidate_id,
@@ -208,12 +298,12 @@ def run_job(
         entity_id=entity_id,
         correlation_id=correlation_id,
         candidate_id=candidate_id,
-        artifacts=[intake_artifact.artifact_id, screening_artifact.artifact_id],
+        artifacts=[intake_artifact.artifact_id, screening_artifact.artifact_id, audit_artifact.artifact_id],
     )
 
     return JobResponse(
         job_id=entity_id,
         status="completed",
-        artifact_id=screening_artifact.artifact_id,
+        artifact_id=audit_artifact.artifact_id,
         correlation_id=correlation_id,
     )

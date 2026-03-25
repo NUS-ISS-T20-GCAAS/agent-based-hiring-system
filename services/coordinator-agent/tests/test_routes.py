@@ -19,67 +19,16 @@ from app.routes import (
 
 
 class FakeResponse:
-    def __init__(self, payload: list[dict], status_code: int = 200):
+    def __init__(self, payload, status_code: int = 200):
         self._payload = payload
         self.status_code = status_code
 
-    def json(self) -> list[dict]:
+    def json(self):
         return self._payload
 
     def raise_for_status(self) -> None:
         if self.status_code >= 400:
             raise requests.HTTPError(f"status={self.status_code}")
-
-
-class RoutesArtifactTests(unittest.TestCase):
-    @patch("app.routes.requests.get")
-    def test_get_job_artifacts_combines_and_sorts(self, get_mock):
-        intake_artifact = {
-            "artifact_id": "a-intake",
-            "entity_id": "job-1",
-            "correlation_id": "cid-1",
-            "agent_id": "agent-intake",
-            "agent_type": "resume_intake",
-            "artifact_type": "resume_intake_result",
-            "payload": {"skills": ["python"]},
-            "confidence": 0.8,
-            "explanation": "intake done",
-            "created_at": "2026-02-24T12:00:02+00:00",
-            "version": 1,
-        }
-        screening_artifact = {
-            "artifact_id": "a-screen",
-            "entity_id": "job-1",
-            "correlation_id": "cid-1",
-            "agent_id": "agent-screen",
-            "agent_type": "screening",
-            "artifact_type": "qualification_screening_result",
-            "payload": {"qualification_score": 0.71},
-            "confidence": 0.9,
-            "explanation": "screening done",
-            "created_at": "2026-02-24T12:00:03+00:00",
-            "version": 1,
-        }
-        get_mock.side_effect = [
-            FakeResponse([intake_artifact]),
-            FakeResponse([screening_artifact]),
-        ]
-
-        result = get_job_artifacts("job-1")
-
-        self.assertEqual(len(result), 2)
-        self.assertEqual(result[0]["artifact_id"], "a-intake")
-        self.assertEqual(result[1]["artifact_id"], "a-screen")
-        self.assertEqual(get_mock.call_count, 2)
-
-    @patch("app.routes.requests.get")
-    def test_get_job_artifacts_returns_503_if_service_down(self, get_mock):
-        get_mock.side_effect = requests.exceptions.RequestException("network down")
-
-        with self.assertRaises(HTTPException) as ctx:
-            get_job_artifacts("job-2")
-
-        self.assertEqual(ctx.exception.status_code, 503)
 
 
 class FakeRepository:
@@ -163,6 +112,38 @@ class FakeRepository:
             }
         ]
 
+    def list_artifacts(self, *, job_id=None):
+        return [
+            {
+                "artifact_id": "a-intake",
+                "entity_id": job_id or "job-1",
+                "candidate_id": "c-1",
+                "correlation_id": "cid-1",
+                "agent_id": "resume-intake-agent",
+                "agent_type": "resume_intake",
+                "artifact_type": "resume_intake_result",
+                "payload": {"skills": ["python"]},
+                "confidence": 0.8,
+                "explanation": "intake done",
+                "created_at": "2026-02-24T12:00:02+00:00",
+                "version": 1,
+            },
+            {
+                "artifact_id": "a-audit",
+                "entity_id": job_id or "job-1",
+                "candidate_id": "c-1",
+                "correlation_id": "cid-1",
+                "agent_id": "audit-agent",
+                "agent_type": "audit",
+                "artifact_type": "audit_bias_check_result",
+                "payload": {"risk_level": "low", "review_required": False},
+                "confidence": 0.88,
+                "explanation": "audit done",
+                "created_at": "2026-02-24T12:00:04+00:00",
+                "version": 1,
+            },
+        ]
+
     def get_stats(self, *, job_id=None):
         return {
             "total_candidates": 10,
@@ -215,6 +196,10 @@ class RoutesReadApiTests(unittest.TestCase):
         self.assertEqual(len(decisions), 1)
         self.assertEqual(decisions[0]["decision_type"], "qualification_screening_result")
 
+        artifacts = get_job_artifacts("job-1")
+        self.assertEqual(len(artifacts), 2)
+        self.assertEqual(artifacts[1]["artifact_type"], "audit_bias_check_result")
+
         stats = get_stats(job_id="job-1")
         self.assertEqual(stats["total_candidates"], 10)
         self.assertEqual(stats["shortlisted"], 4)
@@ -234,6 +219,45 @@ class RoutesReadApiTests(unittest.TestCase):
         with self.assertRaises(HTTPException) as candidate_ctx:
             get_candidate("missing")
         self.assertEqual(candidate_ctx.exception.status_code, 404)
+
+    @patch("app.routes.requests.post")
+    @patch("app.routes.CoordinatorRepository")
+    def test_bias_check_route_uses_audit_agent(self, repo_cls, post_mock):
+        repo_cls.return_value = FakeRepository()
+        post_mock.return_value = FakeResponse(
+            {
+                "artifact_id": "a-audit-live",
+                "entity_id": "job-1",
+                "correlation_id": "cid-live",
+                "agent_id": "audit-agent",
+                "agent_type": "audit",
+                "artifact_type": "audit_bias_check_result",
+                "payload": {
+                    "job_id": "job-1",
+                    "selection_rate": 0.4,
+                    "total_candidates": 10,
+                    "shortlisted": 4,
+                    "bias_flags": [],
+                    "risk_level": "low",
+                    "review_required": False,
+                    "recommendations": ["continue monitoring"],
+                },
+                "confidence": 0.9,
+                "explanation": "audit complete",
+                "created_at": "2026-03-25T10:00:00+00:00",
+                "version": 1,
+            }
+        )
+
+        from app.routes import get_bias_check
+
+        result = get_bias_check(job_id="job-1")
+
+        self.assertEqual(result["job_id"], "job-1")
+        self.assertEqual(result["artifact_type"], "audit_bias_check_result")
+        self.assertAlmostEqual(result["selection_rate"], 0.4)
+        self.assertFalse(result["review_required"])
+        self.assertEqual(post_mock.call_count, 1)
 
     @patch("app.routes.run_job")
     @patch("app.routes.CoordinatorRepository")

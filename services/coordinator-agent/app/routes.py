@@ -1,5 +1,5 @@
 import re
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 import requests
@@ -8,7 +8,7 @@ from app.schemas import JobRequest, JobResponse, Artifact
 from app.coordinator import run_job
 from app.repository import CoordinatorRepository
 
-from app.config import RESUME_INTAKE_AGENT_URL, SCREENING_AGENT_URL, REQUEST_TIMEOUT
+from app.config import AUDIT_AGENT_URL, RESUME_INTAKE_AGENT_URL, SCREENING_AGENT_URL, REQUEST_TIMEOUT
 from app.logger import get_logger
 
 router = APIRouter()
@@ -23,6 +23,18 @@ def _to_float(value: object) -> float:
     if isinstance(value, (int, float)):
         return float(value)
     return 0.0
+
+
+def _json_safe(value):
+    if isinstance(value, Decimal):
+        return float(value)
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {key: _json_safe(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_json_safe(item) for item in value]
+    return value
 
 
 def _extract_required_skills(job_description: str | None) -> list[str]:
@@ -133,6 +145,25 @@ def _decision_payload(row: dict) -> dict:
         "reasoning": row.get("explanation"),
         "confidence": _to_float(row.get("confidence")),
         "timestamp": timestamp,
+    }
+
+
+def _artifact_payload(row: dict) -> dict:
+    created_at = row.get("created_at")
+    timestamp = created_at.isoformat() if hasattr(created_at, "isoformat") else str(created_at)
+    return {
+        "artifact_id": row.get("artifact_id"),
+        "entity_id": row.get("entity_id"),
+        "candidate_id": row.get("candidate_id"),
+        "correlation_id": row.get("correlation_id"),
+        "agent_id": row.get("agent_id"),
+        "agent_type": row.get("agent_type"),
+        "artifact_type": row.get("artifact_type"),
+        "payload": row.get("payload"),
+        "confidence": _to_float(row.get("confidence")),
+        "explanation": row.get("explanation"),
+        "created_at": timestamp,
+        "version": int(row.get("version") or 1),
     }
 
 
@@ -304,6 +335,7 @@ def get_agent_status():
         ("coordinator", "http://localhost:8000/health"),
         ("resume-intake", f"{RESUME_INTAKE_AGENT_URL}/health"),
         ("screening", f"{SCREENING_AGENT_URL}/health"),
+        ("audit", f"{AUDIT_AGENT_URL}/health"),
     ]
 
     services = []
@@ -328,61 +360,52 @@ def get_agent_status():
 def get_bias_check(job_id: str | None = Query(default=None)):
     repository = CoordinatorRepository()
     stats = repository.get_stats(job_id=job_id)
-    total = int(stats.get("total_candidates") or 0)
-    shortlisted = int(stats.get("shortlisted") or 0)
-    selection_rate = 0.0 if total == 0 else shortlisted / total
+    candidates = repository.list_candidates(job_id=job_id)
+    decisions = repository.list_artifacts(job_id=job_id)
 
-    return {
-        "job_id": job_id,
-        "selection_rate": selection_rate,
-        "total_candidates": total,
-        "shortlisted": shortlisted,
-        "bias_flags": [],
-        "status": "not_implemented",
-    }
-
-
-def _fetch_service_artifacts(job_id: str, *, service_name: str, base_url: str) -> list[Artifact]:
     try:
-        resp = requests.get(
-            f"{base_url}/artifacts/{job_id}",
+        resp = requests.post(
+            f"{AUDIT_AGENT_URL}/run",
+            json=_json_safe({
+                "entity_id": job_id or "global-audit",
+                "correlation_id": f"audit-read-{job_id or 'all'}",
+                "input_data": {
+                    "job_id": job_id,
+                    "stats": stats,
+                    "candidates": candidates,
+                    "decisions": decisions,
+                },
+            }),
             timeout=REQUEST_TIMEOUT,
         )
         resp.raise_for_status()
-        return [Artifact.model_validate(x) for x in resp.json()]
+        artifact = Artifact.model_validate(resp.json())
+        if isinstance(artifact.payload, dict):
+            return {
+                **artifact.payload,
+                "artifact_id": artifact.artifact_id,
+                "agent_id": artifact.agent_id,
+                "agent_type": artifact.agent_type,
+                "artifact_type": artifact.artifact_type,
+                "confidence": artifact.confidence,
+                "explanation": artifact.explanation,
+                "created_at": artifact.created_at,
+                "version": artifact.version,
+                "correlation_id": artifact.correlation_id,
+            }
+        return artifact.model_dump()
     except requests.exceptions.RequestException as exc:
         logger.error(
-            "artifacts_fetch_failed",
-            entity_id=job_id,
-            service=service_name,
+            "audit_fetch_failed",
+            entity_id=job_id or "all",
             error=str(exc),
         )
-        raise HTTPException(status_code=503, detail=f"{service_name} unavailable")
+        raise HTTPException(status_code=503, detail="audit unavailable")
 
 
 @router.get("/jobs/{job_id}/artifacts")
 def get_job_artifacts(job_id: str):
-    try:
-        artifacts = []
-        artifacts.extend(
-            _fetch_service_artifacts(
-                job_id,
-                service_name="resume-intake",
-                base_url=RESUME_INTAKE_AGENT_URL,
-            )
-        )
-        artifacts.extend(
-            _fetch_service_artifacts(
-                job_id,
-                service_name="screening",
-                base_url=SCREENING_AGENT_URL,
-            )
-        )
-
-        artifacts.sort(key=lambda item: datetime.fromisoformat(item.created_at))
-        return [item.model_dump() for item in artifacts]
-    except HTTPException:
-        raise
-    except Exception as exc:
-        logger.error("artifacts_proxy_crashed", entity_id=job_id, error=str(exc))
-        raise HTTPException(status_code=500, detail=f"proxy failed: {type(exc).__name__}")
+    repository = CoordinatorRepository()
+    _job_or_404(repository, job_id)
+    rows = repository.list_artifacts(job_id=job_id)
+    return [_artifact_payload(row) for row in rows]

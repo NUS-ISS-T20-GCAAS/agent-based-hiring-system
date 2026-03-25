@@ -2,7 +2,7 @@
 **Project:** Agent-Based Hiring System for Scalable & Explainable Resume Screening
 **Team:** Team 20
 **Module:** GC Architecting AI Systems – Practice
-**Last Updated:** 2026-03-21
+**Last Updated:** 2026-03-25
 
 ---
 
@@ -16,7 +16,7 @@ The project now has a working backend vertical slice:
 4. Workflow state and artifacts are persisted in Postgres
 5. DB-backed APIs expose jobs, candidates, decisions, stats, uploads, and artifact replay
 
-OpenAI model hooks are implemented for the two active agent roles, but real model-backed execution still depends on configuring `OPENAI_API_KEY`.
+OpenAI model hooks are implemented for resume intake, screening, and audit, but real model-backed execution still depends on configuring `OPENAI_API_KEY`.
 
 ---
 
@@ -48,13 +48,17 @@ OpenAI model hooks are implemented for the two active agent roles, but real mode
 ### Active Agents
 - [x] Resume Intake Agent
 - [x] Qualification Screening Agent
-- [ ] Audit / Compliance Agent
+- [x] Audit / Compliance Agent service
+- [x] Audit / Compliance Agent integrated into coordinator workflow
 
 ### Coordinator Workflow
 - [x] `resume-intake -> screening` orchestration
+- [x] `resume-intake -> screening -> audit` orchestration
 - [x] Workflow bootstrap and completion tracking
 - [x] Candidate record creation during processing
 - [x] Artifact persistence for each completed step
+- [ ] Coordinator-level `needs_human_review` rule
+- [ ] Coordinator-level escalation state exposed to frontend
 
 ### Database & Persistence
 - [x] Postgres migrations added
@@ -77,13 +81,16 @@ OpenAI model hooks are implemented for the two active agent roles, but real mode
 - [x] `POST /candidates/batch-upload`
 - [x] `GET /stats`
 - [x] `GET /agents/status`
-- [x] `GET /audit/bias-check` placeholder
+- [x] `GET /audit/bias-check` placeholder route
+- [x] `GET /audit/bias-check` backed by the audit agent
+- [x] `GET /jobs/{job_id}/artifacts` includes audit artifacts from integrated flow
 
 ### Testing & Verification
 - [x] Coordinator route tests added
 - [x] Coordinator orchestration tests added
 - [x] Resume intake LLM/fallback tests added
 - [x] Screening LLM/fallback tests added
+- [x] Audit agent LLM/fallback tests added
 - [x] End-to-end smoke test executed through the running service stack
 
 ---
@@ -93,6 +100,7 @@ OpenAI model hooks are implemented for the two active agent roles, but real mode
 ### OpenAI-Backed Agent Roles
 - [x] Resume intake model client added
 - [x] Screening model client added
+- [x] Audit model client added
 - [x] `OPENAI_MODEL` configuration added
 - [x] `llm_enabled` health reporting added
 - [ ] Real end-to-end run with production API key
@@ -102,14 +110,27 @@ OpenAI model hooks are implemented for the two active agent roles, but real mode
 - [ ] Improved candidate name extraction fallback
 - [ ] Better job-skill extraction for heuristic screening
 - [ ] Confidence scoring calibration
+- [ ] Stronger explanation payloads in frontend detail views
 
 ---
 
-## Phase 4 – Planned Work
+## Phase 4 – Demo-Critical Work (NEXT)
 
-- [ ] Audit & Compliance Agent
-- [ ] Bias detection implementation behind `/audit/bias-check`
-- [ ] Human-in-the-loop escalation flow
+- [x] Integrate audit agent into the coordinator workflow
+- [x] Persist audit artifacts in Postgres as part of the main workflow
+- [x] Replace `/audit/bias-check` placeholder logic with audit-agent-backed execution
+- [ ] Add human-in-the-loop escalation flow using screening and audit review flags
+- [ ] Expose review-required state and decision trail clearly in the frontend
+- [ ] Upgrade resume upload parsing for real PDF and DOCX extraction
+- [ ] Run a benchmark and demo-readiness verification pass
+
+## Phase 5 – Remaining Demo Work / Nice To Have
+
+- [ ] Standalone ranking / recommendation agent
+- [ ] Better skill extraction and candidate name extraction heuristics
+- [ ] Confidence calibration improvements
+- [ ] Auto-trigger job audit after screening completes
+- [ ] Dashboard improvements for stage status, fairness metrics, and agent activity
 - [ ] Async queue/event-driven execution if scale requires it
 - [ ] Delete candidate endpoint and cleanup flows
 
@@ -117,7 +138,7 @@ OpenAI model hooks are implemented for the two active agent roles, but real mode
 
 ## Notes
 
-- The previous tracker understated the current backend progress.
-- Persistence is now implemented in the coordinator workflow through Postgres.
-- Agent-local shared memory still exists for per-service replay, but the system of record is now the database-backed coordinator flow.
-- Real model reasoning is ready in code but inactive until OpenAI credentials are configured.
+- The audit agent is now on the coordinator critical path and its artifacts are persisted through the shared Postgres-backed flow.
+- Screening already emits `needs_human_review` and `review_reasons`, but that state is not yet elevated into a coordinator-level escalation decision.
+- Upload handling still decodes raw bytes in the coordinator route layer, so PDF/DOCX demo reliability remains a real risk until parsing is upgraded.
+- Agent-local shared memory still exists for per-service replay, but the database-backed coordinator flow is the intended system of record for demoable state.

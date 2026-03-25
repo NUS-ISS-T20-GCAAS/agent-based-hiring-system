@@ -37,6 +37,28 @@ class FakeRepository:
     def save_artifact(self, **_kwargs):
         return None
 
+    def list_candidates(self, **_kwargs):
+        return [
+            {
+                "id": "11111111-1111-1111-1111-111111111111",
+                "skills_score": 0.3,
+                "composite_score": 0.4,
+                "status": "processing",
+                "recommendation": "PENDING",
+            }
+        ]
+
+    def list_artifacts(self, **_kwargs):
+        return []
+
+    def get_stats(self, **_kwargs):
+        return {
+            "total_candidates": 1,
+            "shortlisted": 0,
+            "rejected": 0,
+            "avg_score": 0.0,
+        }
+
     def mark_workflow_failed(self, **_kwargs):
         return None
 
@@ -47,7 +69,7 @@ class FakeRepository:
 class CoordinatorRunJobTests(unittest.TestCase):
     @patch("app.coordinator.time.sleep", return_value=None)
     @patch("app.coordinator.requests.post")
-    def test_run_job_calls_intake_then_screening(self, post_mock, _sleep_mock):
+    def test_run_job_calls_intake_then_screening_then_audit(self, post_mock, _sleep_mock):
         intake_artifact = {
             "artifact_id": "a-intake",
             "entity_id": "job-123",
@@ -74,7 +96,33 @@ class CoordinatorRunJobTests(unittest.TestCase):
             "created_at": "2026-02-24T12:00:01+00:00",
             "version": 1,
         }
-        post_mock.side_effect = [FakeResponse(intake_artifact), FakeResponse(screening_artifact)]
+        audit_artifact = {
+            "artifact_id": "a-audit",
+            "entity_id": "job-123",
+            "correlation_id": "cid-1",
+            "agent_id": "agent-audit",
+            "agent_type": "audit",
+            "artifact_type": "audit_bias_check_result",
+            "payload": {
+                "job_id": "job-123",
+                "selection_rate": 1.0,
+                "total_candidates": 1,
+                "shortlisted": 1,
+                "bias_flags": [],
+                "risk_level": "low",
+                "review_required": False,
+                "recommendations": ["continue monitoring"],
+            },
+            "confidence": 0.86,
+            "explanation": "audit ok",
+            "created_at": "2026-02-24T12:00:02+00:00",
+            "version": 1,
+        }
+        post_mock.side_effect = [
+            FakeResponse(intake_artifact),
+            FakeResponse(screening_artifact),
+            FakeResponse(audit_artifact),
+        ]
 
         req = JobRequest(
             job_id="job-123",
@@ -90,15 +138,17 @@ class CoordinatorRunJobTests(unittest.TestCase):
 
         self.assertEqual(result.job_id, "job-123")
         self.assertEqual(result.status, "completed")
-        self.assertEqual(result.artifact_id, "a-screen")
-        self.assertEqual(post_mock.call_count, 2)
+        self.assertEqual(result.artifact_id, "a-audit")
+        self.assertEqual(post_mock.call_count, 3)
 
         first_payload = post_mock.call_args_list[0].kwargs["json"]
         second_payload = post_mock.call_args_list[1].kwargs["json"]
+        third_payload = post_mock.call_args_list[2].kwargs["json"]
 
         self.assertEqual(first_payload["entity_id"], "job-123")
         self.assertEqual(first_payload["input_data"]["resume_url"], "https://example.com/resume.pdf")
         self.assertEqual(first_payload["correlation_id"], second_payload["correlation_id"])
+        self.assertEqual(second_payload["correlation_id"], third_payload["correlation_id"])
         self.assertEqual(
             second_payload["input_data"]["parsed_resume"],
             intake_artifact["payload"],
@@ -112,10 +162,13 @@ class CoordinatorRunJobTests(unittest.TestCase):
                 "education_level": None,
             },
         )
+        self.assertEqual(third_payload["input_data"]["job_id"], "job-123")
+        self.assertEqual(third_payload["input_data"]["stats"]["shortlisted"], 1)
+        self.assertEqual(third_payload["input_data"]["candidates"][0]["status"], "shortlisted")
 
     @patch("app.coordinator.time.sleep", return_value=None)
     @patch("app.coordinator.requests.post")
-    def test_run_job_returns_503_when_screening_fails(self, post_mock, _sleep_mock):
+    def test_run_job_returns_503_when_audit_fails(self, post_mock, _sleep_mock):
         intake_artifact = {
             "artifact_id": "a-intake",
             "entity_id": "job-503",
@@ -131,9 +184,24 @@ class CoordinatorRunJobTests(unittest.TestCase):
         }
         post_mock.side_effect = [
             FakeResponse(intake_artifact),
-            requests.exceptions.RequestException("screening down"),
-            requests.exceptions.RequestException("screening down"),
-            requests.exceptions.RequestException("screening down"),
+            FakeResponse(
+                {
+                    "artifact_id": "a-screen",
+                    "entity_id": "job-503",
+                    "correlation_id": "cid-2",
+                    "agent_id": "agent-screen",
+                    "agent_type": "screening",
+                    "artifact_type": "qualification_screening_result",
+                    "payload": {"qualification_score": 0.75, "meets_threshold": True},
+                    "confidence": 0.9,
+                    "explanation": "screening ok",
+                    "created_at": "2026-02-24T12:00:01+00:00",
+                    "version": 1,
+                }
+            ),
+            requests.exceptions.RequestException("audit down"),
+            requests.exceptions.RequestException("audit down"),
+            requests.exceptions.RequestException("audit down"),
         ]
 
         req = JobRequest(
@@ -146,8 +214,8 @@ class CoordinatorRunJobTests(unittest.TestCase):
             run_job(req, repository=FakeRepository())
 
         self.assertEqual(ctx.exception.status_code, 503)
-        self.assertEqual(ctx.exception.detail, "screening unavailable")
-        self.assertEqual(post_mock.call_count, 4)
+        self.assertEqual(ctx.exception.detail, "audit unavailable")
+        self.assertEqual(post_mock.call_count, 5)
 
 
 if __name__ == "__main__":
