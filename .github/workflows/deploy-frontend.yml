@@ -31,7 +31,7 @@ env:
 permissions:
   id-token: write
   contents: read
-  packages: read
+  packages: write
 
 jobs:
   # ── 1. Reusable Build Job (Calling the Template) ──
