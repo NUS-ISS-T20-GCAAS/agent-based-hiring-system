@@ -174,14 +174,24 @@ jobs:
           ACCOUNT_ID="${{ steps.aws-info.outputs.account_id }}"
           REGION="${{ env.AWS_REGION }}"
 
+          # Gracefully fetch the exact image tag already running in Kubernetes
+          CURRENT_TAG=$(kubectl get deployment frontend -n frontend -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null | awk -F: '{print $NF}')
+          
+          if [ -z "$CURRENT_TAG" ]; then
+            CURRENT_TAG="latest"
+            echo "No existing frontend deployment found. Using fallback tag: $CURRENT_TAG"
+          else
+            echo "Found live EKS frontend tag: $CURRENT_TAG"
+          fi
+
           echo "Replacing <ACCOUNT_ID> with $ACCOUNT_ID"
           echo "Replacing <REGION> with $REGION"
-          echo "Replacing <IMAGE_TAG> with latest"
+          echo "Replacing <IMAGE_TAG> with $CURRENT_TAG"
 
           for file in ${{ env.TF_DIR }}/k8s/*-deployment.yaml; do
             sed -i "s/<ACCOUNT_ID>/$ACCOUNT_ID/g" "$file"
             sed -i "s/<REGION>/$REGION/g" "$file"
-            sed -i "s/<IMAGE_TAG>/latest/g" "$file"
+            sed -i "s/<IMAGE_TAG>/$CURRENT_TAG/g" "$file"
             echo "Updated: $file"
           done
 
