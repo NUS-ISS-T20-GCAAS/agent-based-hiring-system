@@ -16,6 +16,6 @@ node_max_size       = 3
 # ── RDS ─────────────────────────
 db_instance_class  = "db.t3.micro"
 db_name            = "hiring_system"
-db_username        = "user"
+db_username        = "dbadmin"
 db_password        = "CHANGE_ME_BEFORE_APPLY"   # ⚠️  Use a strong password!
-db_engine_version  = "15"
+db_engine_version  = "15.7"
