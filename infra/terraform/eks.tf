@@ -27,11 +27,19 @@ resource "aws_security_group_rule" "eks_cluster_egress" {
   description       = "Allow all outbound traffic"
 }
 
+data "aws_caller_identity" "current" {}
+data "aws_iam_users" "all" {}
+
 # ── EKS Cluster ───────────────────────────────
 resource "aws_eks_cluster" "main" {
   name     = local.cluster_name
   version  = var.eks_cluster_version
   role_arn = aws_iam_role.eks_cluster.arn
+
+  access_config {
+    authentication_mode                         = "API_AND_CONFIG_MAP"
+    bootstrap_cluster_creator_admin_permissions = true
+  }
 
   vpc_config {
     subnet_ids = concat(
@@ -91,4 +99,38 @@ resource "aws_eks_node_group" "general" {
     aws_iam_role_policy_attachment.eks_cni_policy,
     aws_iam_role_policy_attachment.ecr_read_only,
   ]
+}
+
+# ── Allow Root Account Access ──────────────────
+resource "aws_eks_access_entry" "root" {
+  cluster_name  = aws_eks_cluster.main.name
+  principal_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
+  type          = "STANDARD"
+}
+
+resource "aws_eks_access_policy_association" "root_admin" {
+  cluster_name  = aws_eks_cluster.main.name
+  policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+  principal_arn = aws_eks_access_entry.root.principal_arn
+  access_scope {
+    type = "cluster"
+  }
+}
+
+# ── Allow All IAM Users Access ────────────────
+resource "aws_eks_access_entry" "all_users" {
+  for_each      = data.aws_iam_users.all.arns
+  cluster_name  = aws_eks_cluster.main.name
+  principal_arn = each.value
+  type          = "STANDARD"
+}
+
+resource "aws_eks_access_policy_association" "all_users_admin" {
+  for_each      = data.aws_iam_users.all.arns
+  cluster_name  = aws_eks_cluster.main.name
+  policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+  principal_arn = aws_eks_access_entry.all_users[each.key].principal_arn
+  access_scope {
+    type = "cluster"
+  }
 }
