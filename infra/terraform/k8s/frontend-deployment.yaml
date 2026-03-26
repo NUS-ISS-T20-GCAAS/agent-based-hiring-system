@@ -10,7 +10,7 @@ metadata:
   labels:
     app: frontend
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: frontend
@@ -24,7 +24,7 @@ spec:
           # Replace <ACCOUNT_ID> and <REGION> after terraform apply
           image: <ACCOUNT_ID>.dkr.ecr.<REGION>.amazonaws.com/hiring-system/frontend:<IMAGE_TAG>
           ports:
-            - containerPort: 3000
+            - containerPort: 80
               name: http
           resources:
             requests:
@@ -34,17 +34,17 @@ spec:
               cpu: 250m
               memory: 256Mi
           livenessProbe:
-            httpGet:
-              path: /
-              port: 3000
-            initialDelaySeconds: 10
+            tcpSocket:
+              port: 80
+            initialDelaySeconds: 30
             periodSeconds: 30
+            failureThreshold: 3
           readinessProbe:
-            httpGet:
-              path: /
-              port: 3000
-            initialDelaySeconds: 5
+            tcpSocket:
+              port: 80
+            initialDelaySeconds: 15
             periodSeconds: 10
+            failureThreshold: 3
 ---
 apiVersion: v1
 kind: Service
@@ -59,6 +59,6 @@ spec:
     app: frontend
   ports:
     - port: 80
-      targetPort: 3000
+      targetPort: 80
       protocol: TCP
       name: http
