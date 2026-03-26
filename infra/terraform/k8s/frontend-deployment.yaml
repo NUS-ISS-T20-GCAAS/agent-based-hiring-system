@@ -24,7 +24,7 @@ spec:
           # Replace <ACCOUNT_ID> and <REGION> after terraform apply
           image: <ACCOUNT_ID>.dkr.ecr.<REGION>.amazonaws.com/hiring-system/frontend:<IMAGE_TAG>
           ports:
-            - containerPort: 80
+            - containerPort: 3000
               name: http
           resources:
             requests:
@@ -36,13 +36,13 @@ spec:
           livenessProbe:
             httpGet:
               path: /
-              port: 80
+              port: 3000
             initialDelaySeconds: 10
             periodSeconds: 30
           readinessProbe:
             httpGet:
               path: /
-              port: 80
+              port: 3000
             initialDelaySeconds: 5
             periodSeconds: 10
 ---
@@ -59,6 +59,6 @@ spec:
     app: frontend
   ports:
     - port: 80
-      targetPort: 80
+      targetPort: 3000
       protocol: TCP
       name: http
