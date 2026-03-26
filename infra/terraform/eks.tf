@@ -67,6 +67,55 @@ resource "aws_eks_cluster" "main" {
   ]
 }
 
+# ── Security Group for EKS Worker Nodes ────────
+resource "aws_security_group" "eks_nodes" {
+  name_prefix = "${local.cluster_name}-eks-nodes-"
+  vpc_id      = aws_vpc.main.id
+  description = "Security group for EKS worker nodes"
+
+  tags = {
+    Name = "${local.cluster_name}-eks-nodes-sg"
+  }
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+# Allow inbound NodePort traffic (30000-32767) from anywhere in the VPC
+# This is required for the Classic Load Balancer to reach Kubernetes Services
+resource "aws_security_group_rule" "eks_nodes_nodeport_ingress" {
+  type              = "ingress"
+  from_port         = 30000
+  to_port           = 32767
+  protocol          = "tcp"
+  cidr_blocks       = [var.vpc_cidr]
+  security_group_id = aws_security_group.eks_nodes.id
+  description       = "Allow NodePort traffic from VPC (for ELB health checks)"
+}
+
+# Allow all traffic between worker nodes (inter-node communication)
+resource "aws_security_group_rule" "eks_nodes_self_ingress" {
+  type                     = "ingress"
+  from_port                = 0
+  to_port                  = 0
+  protocol                 = "-1"
+  source_security_group_id = aws_security_group.eks_nodes.id
+  security_group_id        = aws_security_group.eks_nodes.id
+  description              = "Allow all traffic between worker nodes"
+}
+
+# Allow all outbound traffic from worker nodes
+resource "aws_security_group_rule" "eks_nodes_egress" {
+  type              = "egress"
+  from_port         = 0
+  to_port           = 0
+  protocol          = "-1"
+  cidr_blocks       = ["0.0.0.0/0"]
+  security_group_id = aws_security_group.eks_nodes.id
+  description       = "Allow all outbound traffic"
+}
+
 # ── Managed Node Group (for frontend & system workloads) ──
 resource "aws_eks_node_group" "general" {
   cluster_name    = aws_eks_cluster.main.name
@@ -76,6 +125,10 @@ resource "aws_eks_node_group" "general" {
 
   instance_types = [var.node_instance_type]
 
+  launch_template {
+    id      = aws_launch_template.eks_nodes.id
+    version = aws_launch_template.eks_nodes.latest_version
+  }
   scaling_config {
     desired_size = var.node_desired_size
     min_size     = var.node_min_size
@@ -99,6 +152,26 @@ resource "aws_eks_node_group" "general" {
     aws_iam_role_policy_attachment.eks_cni_policy,
     aws_iam_role_policy_attachment.ecr_read_only,
   ]
+}
+
+# Attach the node security group to each node via a launch template
+# Note: EKS managed node groups auto-attach the cluster security group,
+# but we need to ensure the additional node SG is also applied.
+resource "aws_launch_template" "eks_nodes" {
+  name_prefix = "${local.cluster_name}-nodes-"
+
+  vpc_security_group_ids = [
+    aws_eks_cluster.main.vpc_config[0].cluster_security_group_id,
+    aws_security_group.eks_nodes.id,
+  ]
+
+  tags = {
+    Name = "${local.cluster_name}-node-lt"
+  }
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 # ── Allow Root Account Access ──────────────────
