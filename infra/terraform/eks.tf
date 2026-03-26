@@ -119,17 +119,17 @@ resource "aws_eks_access_policy_association" "root_admin" {
 
 # ── Allow All IAM Users Access ────────────────
 resource "aws_eks_access_entry" "all_users" {
-  for_each      = data.aws_iam_users.all.arns
+  for_each      = setsubtract(data.aws_iam_users.all.arns, [data.aws_caller_identity.current.arn])
   cluster_name  = aws_eks_cluster.main.name
   principal_arn = each.value
   type          = "STANDARD"
 }
 
 resource "aws_eks_access_policy_association" "all_users_admin" {
-  for_each      = data.aws_iam_users.all.arns
+  for_each      = aws_eks_access_entry.all_users
   cluster_name  = aws_eks_cluster.main.name
   policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
-  principal_arn = aws_eks_access_entry.all_users[each.key].principal_arn
+  principal_arn = each.value.principal_arn
   access_scope {
     type = "cluster"
   }
