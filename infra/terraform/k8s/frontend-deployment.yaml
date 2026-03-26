@@ -22,7 +22,7 @@ spec:
       containers:
         - name: frontend
           # Replace <ACCOUNT_ID> and <REGION> after terraform apply
-          image: <ACCOUNT_ID>.dkr.ecr.<REGION>.amazonaws.com/hiring-system/frontend:latest
+          image: <ACCOUNT_ID>.dkr.ecr.<REGION>.amazonaws.com/hiring-system/frontend:<IMAGE_TAG>
           ports:
             - containerPort: 80
               name: http

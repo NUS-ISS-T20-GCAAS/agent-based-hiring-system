@@ -176,10 +176,12 @@ jobs:
 
           echo "Replacing <ACCOUNT_ID> with $ACCOUNT_ID"
           echo "Replacing <REGION> with $REGION"
+          echo "Replacing <IMAGE_TAG> with latest"
 
           for file in ${{ env.TF_DIR }}/k8s/*-deployment.yaml; do
             sed -i "s/<ACCOUNT_ID>/$ACCOUNT_ID/g" "$file"
             sed -i "s/<REGION>/$REGION/g" "$file"
+            sed -i "s/<IMAGE_TAG>/latest/g" "$file"
             echo "Updated: $file"
           done
 
