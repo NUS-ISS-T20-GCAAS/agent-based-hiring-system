@@ -56,25 +56,25 @@ variable "eks_cluster_version" {
 variable "node_instance_type" {
   description = "EC2 instance type for managed node group"
   type        = string
-  default     = "t3.micro"
+  default     = "t3.small"
 }
 
 variable "node_desired_size" {
   description = "Desired number of worker nodes"
   type        = number
-  default     = 1
+  default     = 2
 }
 
 variable "node_min_size" {
   description = "Minimum number of worker nodes"
   type        = number
-  default     = 1
+  default     = 2
 }
 
 variable "node_max_size" {
   description = "Maximum number of worker nodes"
   type        = number
-  default     = 3
+  default     = 4
 }
 
 # ── RDS ────────────────────────────────────────

@@ -47,7 +47,7 @@ graph TB
 
         subgraph PrivSub["Private Subnets (10.0.10.0/24, 10.0.11.0/24)"]
             subgraph EKS["EKS Cluster — Kubernetes 1.32"]
-                subgraph NodeGroup["Managed Node Group (t3.micro)"]
+                subgraph NodeGroup["Managed Node Group (t3.small)"]
                     FE["frontend<br/>namespace<br/>(2 replicas)"]
                 end
                 subgraph Fargate["Fargate — Serverless"]
@@ -73,8 +73,8 @@ graph TB
 | Component | Details |
 |-----------|---------|
 | **VPC** | `10.0.0.0/16`, 2 AZs (`ap-southeast-1a`, `1b`), single NAT (cost-optimized) |
-| **EKS** | K8s 1.32, public+private endpoint, API/audit/authenticator logging |
-| **Node Group** | `t3.micro`, 1–3 nodes, hosts `frontend` namespace |
+| **EKS** | K8s 1.32, public+private endpoint, API/audit/authenticator logging. Root & all IAM users granted ClusterAdmin via Access Entries. |
+| **Node Group** | `t3.small`, 2–4 nodes, hosts `frontend` namespace |
 | **Fargate** | `services` namespace — coordinator, resume-intake, screening agents |
 | **RDS** | PostgreSQL 15, gp3 storage (20–50 GB auto-scale), 7-day backups, encrypted |
 | **ECR** | 4 repos, immutable tags, scan-on-push, 10-image lifecycle cleanup |
