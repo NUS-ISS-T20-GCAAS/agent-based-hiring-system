@@ -14,11 +14,21 @@ on:
           - dev
           - staging
           - prod
-        default: staging
+        default: dev
       image_tag:
         description: "Frontend image tag to deploy"
         required: true
         type: string
+
+env:
+  TF_DIR: infra/terraform
+  TF_VERSION: "1.12.2"
+  AWS_REGION: "ap-southeast-1"
+
+permissions:
+  id-token: write
+  contents: read
+  packages: read
 
 jobs:
   deploy:
@@ -29,15 +39,92 @@ jobs:
     env:
       IMAGE_TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.image_tag || github.event.workflow_run.head_sha }}
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Show deployment target
         run: |
           echo "Environment: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.environment || 'dev' }}"
           echo "Image tag: ${IMAGE_TAG}"
 
-      - name: Deploy
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Terraform Init
+        run: terraform init
+        working-directory: ${{ env.TF_DIR }}
+
+      - name: Get AWS Account ID
+        id: aws-info
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          echo "account_id=$ACCOUNT_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Get Terraform Outputs
+        id: tf-outputs
+        run: |
+          EKS_CLUSTER=$(terraform output -raw eks_cluster_name)
+          FRONTEND_ECR_URL=$(terraform output -json ecr_repository_urls | jq -r '.frontend')
+          echo "eks_cluster=$EKS_CLUSTER" >> "$GITHUB_OUTPUT"
+          echo "frontend_ecr_url=$FRONTEND_ECR_URL" >> "$GITHUB_OUTPUT"
+        working-directory: ${{ env.TF_DIR }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+        
+      - name: Re-tag and Push Image to ECR
         run: |
           REPO_LOWER=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          GHCR_IMAGE="ghcr.io/${REPO_LOWER}/frontend:${IMAGE_TAG}"
+          ECR_URL="${{ steps.tf-outputs.outputs.frontend_ecr_url }}"
+          ECR_IMAGE="${ECR_URL}:${IMAGE_TAG}"
 
-          docker pull ghcr.io/${REPO_LOWER}/frontend:${IMAGE_TAG}
-          docker run -d -p 3000:3000 \
-            ghcr.io/${REPO_LOWER}/frontend:${IMAGE_TAG}
+          echo "Logging into GHCR..."
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+          echo "Pulling from GHCR: $GHCR_IMAGE"
+          docker pull $GHCR_IMAGE
+
+          echo "Tagging image for ECR: $ECR_IMAGE"
+          docker tag $GHCR_IMAGE $ECR_IMAGE
+
+          echo "Pushing to ECR: $ECR_IMAGE"
+          docker push $ECR_IMAGE
+
+          echo "ecr_image=$ECR_IMAGE" >> "$GITHUB_ENV"
+
+      - name: Configure kubectl
+        run: |
+          aws eks update-kubeconfig \
+            --name ${{ steps.tf-outputs.outputs.eks_cluster }} \
+            --region ${{ env.AWS_REGION }}
+
+      - name: Update K8s Deployment Image
+        run: |
+          echo "Updating deployment/frontend to use image ${ecr_image}"
+          kubectl set image deployment/frontend frontend=${ecr_image} -n frontend
+          
+      - name: Verify Rollout Status
+        run: |
+          echo "Waiting for rollout to complete..."
+          kubectl rollout status deployment/frontend -n frontend --timeout=300s
+          
+      - name: Show Deployment Status
+        if: always()
+        run: |
+          echo "=== Frontend Pods ==="
+          kubectl get pods -n frontend
+          echo ""
+          echo "=== Frontend Service (LoadBalancer URL) ==="
+          kubectl get svc -n frontend
