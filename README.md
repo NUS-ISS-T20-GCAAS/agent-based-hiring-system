@@ -35,9 +35,11 @@ The current vertical slice is working end-to-end for text-based resume processin
 6. Setup RDS PostgreSQL 15 (Login AWS Console -> RDS -> Databases -> hiring-system-dev-postgres for endpoint and credentials)
 
 #### Pending infrastructure tasks
-1. Domain name and SSL certificate
-2. Update services' pipeline to automate the build and deploy process in a single workflow
-3. Deploy coordinator-agent, resume-intake-agent, and screening-agent to EKS
+- [ ] Domain name and SSL certificate
+- [ ] Update services' pipeline to automate the build and deploy process in a single workflow
+- [ ] Deploy coordinator-agent, resume-intake-agent, and screening-agent to EKS
+- [ ] Import database schema to hiring-system-dev-postgres
+- [ ] Update coordinator-agent, resume-intake-agent, and screening-agent to use RDS PostgreSQL 15
 
 ## Tech Stack
 
