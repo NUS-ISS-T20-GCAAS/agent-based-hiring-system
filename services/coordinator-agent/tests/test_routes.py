@@ -80,6 +80,10 @@ class FakeRepository:
                 "qualification_score": 0.8,
                 "skills_score": 0.7,
                 "composite_score": 0.77,
+                "needs_human_review": True,
+                "review_status": "pending",
+                "review_reasons": ["Screening: confidence 65% below floor 70%"],
+                "escalation_source": "screening",
             }
         ]
 
@@ -98,6 +102,10 @@ class FakeRepository:
             "qualification_score": 0.8,
             "skills_score": 0.7,
             "composite_score": 0.77,
+            "needs_human_review": True,
+            "review_status": "pending",
+            "review_reasons": ["Screening: confidence 65% below floor 70%"],
+            "escalation_source": "screening",
         }
 
     def get_candidate_decisions(self, *, candidate_id: str):
@@ -149,6 +157,7 @@ class FakeRepository:
             "total_candidates": 10,
             "shortlisted": 4,
             "rejected": 6,
+            "review_required": 2,
             "avg_score": 0.66,
         }
 
@@ -188,9 +197,13 @@ class RoutesReadApiTests(unittest.TestCase):
         self.assertEqual(len(candidates), 1)
         self.assertEqual(candidates[0]["id"], "c-1")
         self.assertEqual(candidates[0]["scores"]["composite"], 0.77)
+        self.assertTrue(candidates[0]["needs_human_review"])
+        self.assertEqual(candidates[0]["review_status"], "pending")
 
         candidate = get_candidate("c-1")
         self.assertEqual(candidate["name"], "Alice")
+        self.assertEqual(candidate["escalation_source"], "screening")
+        self.assertEqual(candidate["review_reasons"], ["Screening: confidence 65% below floor 70%"])
 
         decisions = get_candidate_decisions("c-1")
         self.assertEqual(len(decisions), 1)
@@ -203,6 +216,7 @@ class RoutesReadApiTests(unittest.TestCase):
         stats = get_stats(job_id="job-1")
         self.assertEqual(stats["total_candidates"], 10)
         self.assertEqual(stats["shortlisted"], 4)
+        self.assertEqual(stats["review_required"], 2)
         self.assertAlmostEqual(stats["pass_rate"], 0.4)
 
         rank_result = rank_job_candidates("job-1")

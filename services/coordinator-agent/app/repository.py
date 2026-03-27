@@ -200,9 +200,11 @@ class CoordinatorRepository:
         run_id: str,
         intake_payload: dict[str, Any] | None,
         screening_payload: dict[str, Any] | None,
+        review_state: dict[str, Any] | None,
     ) -> None:
         intake_payload = intake_payload or {}
         screening_payload = screening_payload or {}
+        review_state = review_state or {}
 
         matched = screening_payload.get("matched_skills") or []
         missing = screening_payload.get("missing_skills") or []
@@ -230,6 +232,10 @@ class CoordinatorRepository:
                         qualification_score = %s,
                         skills_score = %s,
                         composite_score = %s,
+                        needs_human_review = %s,
+                        review_status = %s,
+                        review_reasons = %s::jsonb,
+                        escalation_source = %s,
                         updated_at = NOW()
                     WHERE candidate_id = %s::uuid
                     """,
@@ -242,6 +248,10 @@ class CoordinatorRepository:
                         qualification_score,
                         round(skills_score, 4),
                         composite_score,
+                        bool(review_state.get("needs_human_review")),
+                        review_state.get("review_status") or "not_required",
+                        Json(review_state.get("review_reasons") or []),
+                        review_state.get("escalation_source") or "none",
                         candidate_id,
                     ),
                 )
@@ -330,6 +340,10 @@ class CoordinatorRepository:
                         qualification_score,
                         skills_score,
                         composite_score,
+                        needs_human_review,
+                        review_status,
+                        review_reasons,
+                        escalation_source,
                         created_at,
                         updated_at
                     FROM candidates
@@ -357,6 +371,10 @@ class CoordinatorRepository:
                         qualification_score,
                         skills_score,
                         composite_score,
+                        needs_human_review,
+                        review_status,
+                        review_reasons,
+                        escalation_source,
                         created_at,
                         updated_at
                     FROM candidates
@@ -422,6 +440,7 @@ class CoordinatorRepository:
                         COUNT(*)::int AS total_candidates,
                         COUNT(*) FILTER (WHERE status = 'shortlisted')::int AS shortlisted,
                         COUNT(*) FILTER (WHERE status = 'rejected')::int AS rejected,
+                        COUNT(*) FILTER (WHERE needs_human_review = TRUE)::int AS review_required,
                         COALESCE(AVG(composite_score), 0) AS avg_score
                     FROM candidates
                     WHERE (%s::text IS NULL OR job_id = %s)
@@ -433,6 +452,7 @@ class CoordinatorRepository:
                     "total_candidates": 0,
                     "shortlisted": 0,
                     "rejected": 0,
+                    "review_required": 0,
                     "avg_score": 0,
                 }
 

@@ -36,6 +36,79 @@ def _screening_status(screening_payload: dict | None) -> tuple[str, str]:
     return status, recommendation
 
 
+def _normalize_reason(reason: object) -> str | None:
+    if not isinstance(reason, str):
+        return None
+    normalized = " ".join(reason.strip().split())
+    return normalized or None
+
+
+def _dedupe_reasons(reasons: list[str]) -> list[str]:
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for reason in reasons:
+        if reason in seen:
+            continue
+        seen.add(reason)
+        deduped.append(reason)
+    return deduped
+
+
+def _build_review_state(
+    screening_payload: dict | None,
+    audit_payload: dict | None,
+) -> dict:
+    screening_payload = screening_payload or {}
+    audit_payload = audit_payload or {}
+
+    screening_required = bool(screening_payload.get("needs_human_review"))
+    audit_required = bool(audit_payload.get("review_required"))
+
+    reasons: list[str] = []
+
+    if screening_required:
+        screening_reasons = screening_payload.get("review_reasons")
+        if isinstance(screening_reasons, list):
+            for item in screening_reasons:
+                normalized = _normalize_reason(item)
+                if normalized:
+                    reasons.append(f"Screening: {normalized}")
+        if not reasons:
+            reasons.append("Screening: candidate requires manual review")
+
+    if audit_required:
+        audit_flags = audit_payload.get("bias_flags")
+        if isinstance(audit_flags, list):
+            for flag in audit_flags:
+                normalized = _normalize_reason(str(flag).replace("_", " "))
+                if normalized:
+                    reasons.append(f"Audit: {normalized}")
+
+        if not any(reason.startswith("Audit:") for reason in reasons):
+            risk_level = _normalize_reason(audit_payload.get("risk_level"))
+            if risk_level:
+                reasons.append(f"Audit: risk level {risk_level}")
+            else:
+                reasons.append("Audit: workflow requires compliance review")
+
+    needs_human_review = screening_required or audit_required
+    if screening_required and audit_required:
+        escalation_source = "screening_and_audit"
+    elif screening_required:
+        escalation_source = "screening"
+    elif audit_required:
+        escalation_source = "audit"
+    else:
+        escalation_source = "none"
+
+    return {
+        "needs_human_review": needs_human_review,
+        "review_status": "pending" if needs_human_review else "not_required",
+        "review_reasons": _dedupe_reasons(reasons),
+        "escalation_source": escalation_source,
+    }
+
+
 def _build_audit_input(
     *,
     repository: CoordinatorRepository,
@@ -251,12 +324,17 @@ def run_job(
             candidate_id=candidate_id,
             artifact=audit_artifact,
         )
+        review_state = _build_review_state(
+            screening_artifact.payload if isinstance(screening_artifact.payload, dict) else None,
+            audit_artifact.payload if isinstance(audit_artifact.payload, dict) else None,
+        )
         repository.complete_workflow(
             job_id=entity_id,
             candidate_id=candidate_id,
             run_id=run_id,
             intake_payload=intake_artifact.payload if isinstance(intake_artifact.payload, dict) else None,
             screening_payload=screening_artifact.payload if isinstance(screening_artifact.payload, dict) else None,
+            review_state=review_state,
         )
     except HTTPException as exc:
         try:

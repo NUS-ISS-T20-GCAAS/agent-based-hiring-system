@@ -1,8 +1,19 @@
 import React from 'react';
-import { Eye, RefreshCw, TrendingUp, FileText } from 'lucide-react';
+import { Eye, RefreshCw, TrendingUp, FileText, AlertTriangle } from 'lucide-react';
 import { getStatusColor, getRecommendationColor, formatPercent } from '../utils/helpers.js';
 
 const Candidates = ({ candidates, onViewDetails, onRefresh, onRankAll }) => {
+  const formatEscalationSource = (source) => {
+    const labels = {
+      screening: 'Screening',
+      audit: 'Audit',
+      screening_and_audit: 'Screening + Audit',
+      none: 'No Escalation',
+    };
+
+    return labels[source] || 'Review';
+  };
+
   if (candidates.length === 0) {
     return (
       <div className="space-y-6">
@@ -75,6 +86,12 @@ const Candidates = ({ candidates, onViewDetails, onRefresh, onRankAll }) => {
                     <span className={`px-3 py-1 rounded-lg text-xs font-semibold border ${getRecommendationColor(candidate.recommendation)}`}>
                       {candidate.recommendation}
                     </span>
+                    {candidate.needs_human_review && (
+                      <span className="inline-flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-semibold border border-amber-300 bg-amber-50 text-amber-800">
+                        <AlertTriangle className="w-3.5 h-3.5" />
+                        Review Required
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -142,6 +159,23 @@ const Candidates = ({ candidates, onViewDetails, onRefresh, onRankAll }) => {
 
             {/* Skills Tags */}
             <div>
+              {candidate.needs_human_review && (
+                <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+                  <div className="flex items-center gap-2 text-sm font-semibold text-amber-900">
+                    <AlertTriangle className="w-4 h-4" />
+                    Escalated for human review
+                  </div>
+                  <p className="mt-1 text-sm text-amber-800">
+                    Source: {formatEscalationSource(candidate.escalation_source)}
+                  </p>
+                  {candidate.review_reasons?.length > 0 && (
+                    <p className="mt-1 text-sm text-amber-800">
+                      {candidate.review_reasons[0]}
+                    </p>
+                  )}
+                </div>
+              )}
+
               <p className="text-xs font-medium text-slate-600 mb-2">Skills</p>
               <div className="flex flex-wrap gap-2">
                 {candidate.skills?.length > 0 ? (
