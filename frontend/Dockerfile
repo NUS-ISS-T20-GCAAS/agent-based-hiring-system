@@ -29,12 +29,20 @@ FROM nginx:alpine
 # Remove default nginx config
 RUN rm /etc/nginx/conf.d/default.conf
 
-# Custom nginx config
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+# Defaults for localhost / docker-compose
+ENV DNS_RESOLVER="127.0.0.11"
+ENV API_URL="http://coordinator-agent:8000"
+
+# Copy nginx config template (uses __PLACEHOLDER__ syntax to avoid conflicts with nginx $ variables)
+COPY nginx.conf /etc/nginx/nginx.conf.template
 
 # Copy build output
 COPY --from=builder /app/dist /usr/share/nginx/html
 
 EXPOSE 80
 
-CMD ["nginx", "-g", "daemon off;"]
+# Custom entrypoint: replace only our placeholders, then start nginx
+CMD sh -c "sed -e 's|__DNS_RESOLVER__|'\"$DNS_RESOLVER\"'|g' \
+               -e 's|__API_URL__|'\"$API_URL\"'|g' \
+               /etc/nginx/nginx.conf.template > /etc/nginx/conf.d/default.conf \
+           && nginx -g 'daemon off;'"

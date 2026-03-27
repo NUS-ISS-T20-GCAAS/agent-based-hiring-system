@@ -123,12 +123,11 @@ resource "aws_eks_node_group" "general" {
   node_role_arn   = aws_iam_role.eks_node_group.arn
   subnet_ids      = aws_subnet.private[*].id
 
-  instance_types = [var.node_instance_type]
-
   launch_template {
     id      = aws_launch_template.eks_nodes.id
     version = aws_launch_template.eks_nodes.latest_version
   }
+
   scaling_config {
     desired_size = var.node_desired_size
     min_size     = var.node_min_size
@@ -158,7 +157,8 @@ resource "aws_eks_node_group" "general" {
 # Note: EKS managed node groups auto-attach the cluster security group,
 # but we need to ensure the additional node SG is also applied.
 resource "aws_launch_template" "eks_nodes" {
-  name_prefix = "${local.cluster_name}-nodes-"
+  name_prefix   = "${local.cluster_name}-nodes-"
+  instance_type = var.node_instance_type
 
   vpc_security_group_ids = [
     aws_eks_cluster.main.vpc_config[0].cluster_security_group_id,
