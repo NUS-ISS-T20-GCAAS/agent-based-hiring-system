@@ -87,6 +87,12 @@ def _normalize_job_requirements(value: object) -> dict:
     }
 
 
+def _string_list(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, str) and item.strip()]
+
+
 def _extract_resume_text(raw: bytes) -> str:
     if not raw:
         return ""
@@ -118,6 +124,8 @@ def _job_payload(row: dict) -> dict:
 
 def _candidate_payload(row: dict) -> dict:
     skills = row.get("skills") if isinstance(row.get("skills"), list) else []
+    review_reasons = _string_list(row.get("review_reasons"))
+    needs_human_review = bool(row.get("needs_human_review"))
     return {
         "id": row["id"],
         "job_id": row.get("job_id"),
@@ -132,6 +140,10 @@ def _candidate_payload(row: dict) -> dict:
             "skills": _to_float(row.get("skills_score")),
             "composite": _to_float(row.get("composite_score")),
         },
+        "needs_human_review": needs_human_review,
+        "review_status": row.get("review_status") or ("pending" if needs_human_review else "not_required"),
+        "review_reasons": review_reasons,
+        "escalation_source": row.get("escalation_source") or "none",
     }
 
 
@@ -317,6 +329,7 @@ def get_stats(job_id: str | None = Query(default=None)):
     total = int(stats.get("total_candidates") or 0)
     shortlisted = int(stats.get("shortlisted") or 0)
     rejected = int(stats.get("rejected") or 0)
+    review_required = int(stats.get("review_required") or 0)
     avg_score = _to_float(stats.get("avg_score"))
     pass_rate = 0.0 if total == 0 else shortlisted / total
 
@@ -324,6 +337,7 @@ def get_stats(job_id: str | None = Query(default=None)):
         "total_candidates": total,
         "shortlisted": shortlisted,
         "rejected": rejected,
+        "review_required": review_required,
         "avg_score": avg_score,
         "pass_rate": pass_rate,
     }

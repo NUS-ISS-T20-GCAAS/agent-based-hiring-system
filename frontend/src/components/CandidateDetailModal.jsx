@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { X, CheckCircle, Loader } from 'lucide-react';
+import { X, CheckCircle, Loader, AlertTriangle } from 'lucide-react';
 import api from '../services/api.js';
 import { formatTime, formatPercent } from '../utils/helpers.js';
 
@@ -8,6 +8,17 @@ const CandidateDetailModal = ({ candidateId, onClose }) => {
   const [decisions, setDecisions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+
+  const formatEscalationSource = (source) => {
+    const labels = {
+      screening: 'Screening',
+      audit: 'Audit',
+      screening_and_audit: 'Screening and Audit',
+      none: 'No escalation',
+    };
+
+    return labels[source] || 'Review';
+  };
 
   useEffect(() => {
     if (candidateId) {
@@ -130,6 +141,57 @@ const CandidateDetailModal = ({ candidateId, onClose }) => {
                   ) : (
                     <p className="text-slate-500 italic">No skills listed</p>
                   )}
+                </div>
+              </div>
+
+              {/* Review Status */}
+              <div>
+                <h3 className="text-lg font-bold text-slate-900 mb-4">Review Status</h3>
+                <div className={`rounded-xl border p-4 ${
+                  candidate.needs_human_review
+                    ? 'border-amber-200 bg-amber-50'
+                    : 'border-emerald-200 bg-emerald-50'
+                }`}>
+                  <div className="flex items-start gap-3">
+                    {candidate.needs_human_review ? (
+                      <AlertTriangle className="mt-0.5 w-5 h-5 text-amber-700 flex-shrink-0" />
+                    ) : (
+                      <CheckCircle className="mt-0.5 w-5 h-5 text-emerald-700 flex-shrink-0" />
+                    )}
+                    <div className="space-y-2">
+                      <p className={`text-sm font-semibold ${
+                        candidate.needs_human_review ? 'text-amber-900' : 'text-emerald-900'
+                      }`}>
+                        {candidate.needs_human_review ? 'Human review required' : 'No human review required'}
+                      </p>
+                      <p className={`text-sm ${
+                        candidate.needs_human_review ? 'text-amber-800' : 'text-emerald-800'
+                      }`}>
+                        Status: {candidate.review_status?.replace('_', ' ')}
+                      </p>
+                      <p className={`text-sm ${
+                        candidate.needs_human_review ? 'text-amber-800' : 'text-emerald-800'
+                      }`}>
+                        Source: {formatEscalationSource(candidate.escalation_source)}
+                      </p>
+                      {candidate.review_reasons?.length > 0 && (
+                        <div>
+                          <p className={`text-sm font-medium ${
+                            candidate.needs_human_review ? 'text-amber-900' : 'text-emerald-900'
+                          }`}>
+                            Review reasons
+                          </p>
+                          <ul className={`mt-2 list-disc pl-5 text-sm space-y-1 ${
+                            candidate.needs_human_review ? 'text-amber-800' : 'text-emerald-800'
+                          }`}>
+                            {candidate.review_reasons.map(reason => (
+                              <li key={reason}>{reason}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
 

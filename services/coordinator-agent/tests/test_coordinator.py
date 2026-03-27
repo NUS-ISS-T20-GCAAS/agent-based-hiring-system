@@ -22,6 +22,9 @@ class FakeResponse:
 
 
 class FakeRepository:
+    def __init__(self):
+        self.completed_workflow_kwargs = None
+
     def upsert_job(self, **_kwargs):
         return None
 
@@ -63,6 +66,7 @@ class FakeRepository:
         return None
 
     def complete_workflow(self, **_kwargs):
+        self.completed_workflow_kwargs = _kwargs
         return None
 
 
@@ -90,7 +94,12 @@ class CoordinatorRunJobTests(unittest.TestCase):
             "agent_id": "agent-screen",
             "agent_type": "screening",
             "artifact_type": "qualification_screening_result",
-            "payload": {"qualification_score": 0.75, "meets_threshold": True},
+            "payload": {
+                "qualification_score": 0.75,
+                "meets_threshold": True,
+                "needs_human_review": True,
+                "review_reasons": ["confidence 65% below floor 70%"],
+            },
             "confidence": 0.9,
             "explanation": "screening ok",
             "created_at": "2026-02-24T12:00:01+00:00",
@@ -108,9 +117,9 @@ class CoordinatorRunJobTests(unittest.TestCase):
                 "selection_rate": 1.0,
                 "total_candidates": 1,
                 "shortlisted": 1,
-                "bias_flags": [],
+                "bias_flags": ["low_selection_rate"],
                 "risk_level": "low",
-                "review_required": False,
+                "review_required": True,
                 "recommendations": ["continue monitoring"],
             },
             "confidence": 0.86,
@@ -134,7 +143,8 @@ class CoordinatorRunJobTests(unittest.TestCase):
             min_years_experience=3,
         )
 
-        result = run_job(req, repository=FakeRepository())
+        repository = FakeRepository()
+        result = run_job(req, repository=repository)
 
         self.assertEqual(result.job_id, "job-123")
         self.assertEqual(result.status, "completed")
@@ -165,6 +175,18 @@ class CoordinatorRunJobTests(unittest.TestCase):
         self.assertEqual(third_payload["input_data"]["job_id"], "job-123")
         self.assertEqual(third_payload["input_data"]["stats"]["shortlisted"], 1)
         self.assertEqual(third_payload["input_data"]["candidates"][0]["status"], "shortlisted")
+        self.assertEqual(
+            repository.completed_workflow_kwargs["review_state"],
+            {
+                "needs_human_review": True,
+                "review_status": "pending",
+                "review_reasons": [
+                    "Screening: confidence 65% below floor 70%",
+                    "Audit: low selection rate",
+                ],
+                "escalation_source": "screening_and_audit",
+            },
+        )
 
     @patch("app.coordinator.time.sleep", return_value=None)
     @patch("app.coordinator.requests.post")
@@ -216,6 +238,92 @@ class CoordinatorRunJobTests(unittest.TestCase):
         self.assertEqual(ctx.exception.status_code, 503)
         self.assertEqual(ctx.exception.detail, "audit unavailable")
         self.assertEqual(post_mock.call_count, 5)
+
+    @patch("app.coordinator.time.sleep", return_value=None)
+    @patch("app.coordinator.requests.post")
+    def test_run_job_sets_audit_only_review_state(self, post_mock, _sleep_mock):
+        post_mock.side_effect = [
+            FakeResponse(
+                {
+                    "artifact_id": "a-intake",
+                    "entity_id": "job-789",
+                    "correlation_id": "cid-3",
+                    "agent_id": "agent-intake",
+                    "agent_type": "resume_intake",
+                    "artifact_type": "resume_intake_result",
+                    "payload": {"skills": ["python"], "years_experience": 4},
+                    "confidence": 0.8,
+                    "explanation": "intake ok",
+                    "created_at": "2026-02-24T12:00:00+00:00",
+                    "version": 1,
+                }
+            ),
+            FakeResponse(
+                {
+                    "artifact_id": "a-screen",
+                    "entity_id": "job-789",
+                    "correlation_id": "cid-3",
+                    "agent_id": "agent-screen",
+                    "agent_type": "screening",
+                    "artifact_type": "qualification_screening_result",
+                    "payload": {
+                        "qualification_score": 0.91,
+                        "meets_threshold": True,
+                        "needs_human_review": False,
+                        "review_reasons": [],
+                    },
+                    "confidence": 0.95,
+                    "explanation": "screening ok",
+                    "created_at": "2026-02-24T12:00:01+00:00",
+                    "version": 1,
+                }
+            ),
+            FakeResponse(
+                {
+                    "artifact_id": "a-audit",
+                    "entity_id": "job-789",
+                    "correlation_id": "cid-3",
+                    "agent_id": "agent-audit",
+                    "agent_type": "audit",
+                    "artifact_type": "audit_bias_check_result",
+                    "payload": {
+                        "job_id": "job-789",
+                        "selection_rate": 0.25,
+                        "total_candidates": 4,
+                        "shortlisted": 1,
+                        "bias_flags": ["small_sample_size"],
+                        "risk_level": "medium",
+                        "review_required": True,
+                        "recommendations": ["treat as directional"],
+                    },
+                    "confidence": 0.86,
+                    "explanation": "audit ok",
+                    "created_at": "2026-02-24T12:00:02+00:00",
+                    "version": 1,
+                }
+            ),
+        ]
+
+        repository = FakeRepository()
+        run_job(
+            JobRequest(
+                job_id="job-789",
+                resume_url="https://example.com/resume.pdf",
+                resume_text="Python developer with 4 years",
+                job_description="Need python fastapi",
+            ),
+            repository=repository,
+        )
+
+        self.assertEqual(
+            repository.completed_workflow_kwargs["review_state"],
+            {
+                "needs_human_review": True,
+                "review_status": "pending",
+                "review_reasons": ["Audit: small sample size"],
+                "escalation_source": "audit",
+            },
+        )
 
 
 if __name__ == "__main__":
