@@ -7,6 +7,7 @@ An explainable hiring workflow built as cooperating services:
 - `resume-intake-agent` for profile extraction
 - `screening-agent` for qualification scoring
 - `postgres` for workflow and artifact persistence
+- `terraform` for infrastructure deployment
 
 ## Current Status
 
@@ -20,12 +21,31 @@ The current vertical slice is working end-to-end for text-based resume processin
 6. Jobs, candidates, workflow runs, and artifacts are persisted in Postgres
 7. Frontend-facing read APIs return DB-backed data
 
+### For infrastructure progress
+1. Finished EKS cluster with Fargate and managed node group
+2. Hosted frontend on EKS with ALB
+   - DNS name (ELB): `http://a237b86696f4a4559a776297a3ab85a9-173539850.ap-southeast-1.elb.amazonaws.com/`
+3. Linked frontend to coordinator-agent in EKS
+4. Setup ECR repositories
+   - `arn:aws:ecr:ap-southeast-1:693517970860:repository/hiring-system/coordinator-agent`
+   - `arn:aws:ecr:ap-southeast-1:693517970860:repository/hiring-system/resume-intake-agent`
+   - `arn:aws:ecr:ap-southeast-1:693517970860:repository/hiring-system/screening-agent`
+   - `arn:aws:ecr:ap-southeast-1:693517970860:repository/hiring-system/frontend`
+5. Updated frontend's pipeline to push to ECR and deploy to EKS, merged frontend-build.yml into frontend-deploy.yml to automate the build and deploy process
+6. Setup RDS PostgreSQL 15 (Login AWS Console -> RDS -> Databases -> hiring-system-dev-postgres for endpoint and credentials)
+
+#### Pending infrastructure tasks
+1. Domain name and SSL certificate
+2. Update services' pipeline to automate the build and deploy process in a single workflow
+3. Deploy coordinator-agent, resume-intake-agent, and screening-agent to EKS
+
 ## Tech Stack
 
 - Python 3.11
 - FastAPI
-- PostgreSQL
+- PostgreSQL 15
 - Docker / Docker Compose
+- Kubernetes 1.32
 - OpenAI API (optional at runtime)
 
 ## Architecture Notes
