@@ -22,7 +22,7 @@ spec:
       containers:
         - name: resume-intake-agent
           # Replace <ACCOUNT_ID> and <REGION> after terraform apply
-          image: <ACCOUNT_ID>.dkr.ecr.<REGION>.amazonaws.com/hiring-system/resume-intake-agent:latest
+          image: <ACCOUNT_ID>.dkr.ecr.<REGION>.amazonaws.com/hiring-system/resume-intake-agent:<IMAGE_TAG>
           ports:
             - containerPort: 8000
               name: http

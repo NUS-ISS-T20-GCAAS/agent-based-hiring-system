@@ -1,9 +1,12 @@
 name: Deploy Services
 
 on:
-  workflow_run:
-    workflows: ["Build Services"]
-    types: [completed]
+  push:
+    paths:
+      - services/**
+  pull_request:
+    paths:
+      - services/**
   workflow_dispatch:
     inputs:
       environment:
@@ -15,27 +18,116 @@ on:
           - staging
           - prod
         default: staging
-      image_tag:
-        description: "Container image tag to deploy"
-        required: true
-        type: string
+
+env:
+  TF_DIR: infra/terraform
+  TF_VERSION: "1.12.2"
+  AWS_REGION: "ap-southeast-1"
+
+permissions:
+  id-token: write
+  contents: read
+  packages: write
 
 jobs:
+  # 1. Reusable Build Job
+  build:
+    uses: ./.github/workflows/build.yml
+    with:
+      services: all
+    secrets: inherit
+
+  # 2. Deploy Job
   deploy:
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ always() && needs.build.result == 'success' && github.event_name != 'pull_request' }}
+    needs: build
     runs-on: ubuntu-latest
     environment:
       name: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.environment || 'dev' }}
     env:
-      IMAGE_TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.image_tag || github.event.workflow_run.head_sha }}
+      IMAGE_TAG: ${{ github.sha }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Show deployment target
-        run: |
-          echo "Environment: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.environment || 'dev' }}"
-          echo "Image tag: ${IMAGE_TAG}"
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
 
-      - name: Deploy via Docker Compose
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Terraform Init
+        run: terraform init
+        working-directory: ${{ env.TF_DIR }}
+
+      - name: Get AWS Info & Terraform Outputs
+        id: tf-outputs
         run: |
-          docker compose -f infra/docker-compose.yml up -d
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          EKS_CLUSTER=$(terraform output -raw eks_cluster_name)
+          ECR_BASE_URL="${ACCOUNT_ID}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/hiring-system"
+          
+          echo "account_id=$ACCOUNT_ID" >> "$GITHUB_OUTPUT"
+          echo "eks_cluster=$EKS_CLUSTER" >> "$GITHUB_OUTPUT"
+          echo "ecr_base_url=$ECR_BASE_URL" >> "$GITHUB_OUTPUT"
+        working-directory: ${{ env.TF_DIR }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+        
+      - name: Transfer Images (GHCR → ECR)
+        run: |
+          REPO_LOWER=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          SERVICES=("coordinator-agent" "resume-intake-agent" "screening-agent")
+          
+          echo "Logging into GHCR..."
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+          
+          for SERVICE in "${SERVICES[@]}"; do
+            GHCR_IMAGE="ghcr.io/${REPO_LOWER}/${SERVICE}:${IMAGE_TAG}"
+            ECR_IMAGE="${{ steps.tf-outputs.outputs.ecr_base_url }}/${SERVICE}:${IMAGE_TAG}"
+
+            echo "Transferring $SERVICE..."
+            docker pull $GHCR_IMAGE
+            docker tag $GHCR_IMAGE $ECR_IMAGE
+            docker push $ECR_IMAGE
+          done
+
+      - name: Configure kubectl
+        run: |
+          aws eks update-kubeconfig \
+            --name ${{ steps.tf-outputs.outputs.eks_cluster }} \
+            --region ${{ env.AWS_REGION }}
+
+      - name: Replace Placeholders and Apply to Kubernetes
+        run: |
+          ACCOUNT_ID="${{ steps.tf-outputs.outputs.account_id }}"
+          REGION="${{ env.AWS_REGION }}"
+          
+          for file in ${{ env.TF_DIR }}/k8s/*-agent-deployment.yaml; do
+            echo "Processing $file..."
+            sed -i "s/<ACCOUNT_ID>/$ACCOUNT_ID/g" "$file"
+            sed -i "s/<REGION>/$REGION/g" "$file"
+            sed -i "s/<IMAGE_TAG>/${IMAGE_TAG}/g" "$file"
+            
+            # Since the YAML has '...:latest' by default in some places, 
+            # ensure we replace the whole tag properly if it exists
+            sed -i "s/:latest/:${IMAGE_TAG}/g" "$file"
+            
+            kubectl apply -f "$file"
+          done
+          
+      - name: Verify Rollout Status
+          # Wait for main services
+        run: |
+          kubectl rollout status deployment/coordinator-agent -n services --timeout=300s
+          kubectl rollout status deployment/resume-intake-agent -n services --timeout=300s
+          kubectl rollout status deployment/screening-agent -n services --timeout=300s

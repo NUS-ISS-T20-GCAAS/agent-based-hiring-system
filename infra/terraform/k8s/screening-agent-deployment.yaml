@@ -22,7 +22,7 @@ spec:
       containers:
         - name: screening-agent
           # Replace <ACCOUNT_ID> and <REGION> after terraform apply
-          image: <ACCOUNT_ID>.dkr.ecr.<REGION>.amazonaws.com/hiring-system/screening-agent:latest
+          image: <ACCOUNT_ID>.dkr.ecr.<REGION>.amazonaws.com/hiring-system/screening-agent:<IMAGE_TAG>
           ports:
             - containerPort: 8000
               name: http

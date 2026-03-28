@@ -15,12 +15,12 @@ infra/terraform/
 ├── ecr.tf                   # ECR repos (4) with scan-on-push & lifecycle
 ├── eks.tf                   # EKS cluster (K8s 1.32) + managed node group
 ├── eks-fargate.tf           # Fargate profiles (services + kube-system)
-├── rds.tf                   # RDS PostgreSQL 15, encrypted, private-only
+├── rds.tf                   # RDS PostgreSQL 15
 ├── iam.tf                   # IAM roles (cluster, nodes, Fargate, OIDC)
 ├── outputs.tf               # Exported endpoints, URLs, and helper commands
 └── k8s/
     ├── namespaces.yaml                      # frontend + services namespaces
-    ├── frontend-deployment.yaml             # React/nginx, 2 replicas, LB
+    ├── frontend-deployment.yaml             # React/nginx, 2 replicas, LB, Port 80 (Auto-managed by CI/CD)
     ├── coordinator-agent-deployment.yaml    # Fargate, HPA 1→5
     ├── resume-intake-agent-deployment.yaml  # Fargate, HPA 1→5
     ├── screening-agent-deployment.yaml      # Fargate, HPA 1→5
@@ -74,10 +74,11 @@ graph TB
 |-----------|---------|
 | **VPC** | `10.0.0.0/16`, 2 AZs (`ap-southeast-1a`, `1b`), single NAT (cost-optimized) |
 | **EKS** | K8s 1.32, public+private endpoint, API/audit/authenticator logging. Root & all IAM users granted ClusterAdmin via Access Entries. |
-| **Node Group** | `t3.small`, 2–4 nodes, hosts `frontend` namespace |
+| **Node Group** | `t3.small`, 1–4 nodes (managed node group), hosts the `frontend` namespace. |
 | **Fargate** | `services` namespace — coordinator, resume-intake, screening agents |
-| **RDS** | PostgreSQL 15, gp3 storage (20–50 GB auto-scale), 7-day backups, encrypted |
+| **RDS** | PostgreSQL 15, gp2 storage (20 GB), 0-day backups (Free Tier) |
 | **ECR** | 4 repos, immutable tags, scan-on-push, 10-image lifecycle cleanup |
+| **Security** | Node security groups configured with NodePort ingress (30000-32767) for ELB health checks. |
 
 ---
 
@@ -241,17 +242,12 @@ echo -n "dbadmin" | base64                           # → db-username
 echo -n "your-db-password" | base64                  # → db-password
 ```
 
-### 3. `k8s/*-deployment.yaml` — Update ECR Image URIs
+### 3. CI/CD Placeholder Automation (NO Manual Edits Required)
 
-After `terraform apply`, replace the placeholder image references in all deployment YAMLs:
+Unlike traditional setups, the repository is configured to **automatically** handle placeholders like `<ACCOUNT_ID>`, `<REGION>`, and `<IMAGE_TAG>`.
 
-```yaml
-# Replace this:
-image: <ACCOUNT_ID>.dkr.ecr.<REGION>.amazonaws.com/hiring-system/coordinator-agent:latest
-
-# With your actual values (from terraform output ecr_repository_urls):
-image: 123456789012.dkr.ecr.ap-southeast-1.amazonaws.com/hiring-system/coordinator-agent:latest
-```
+- **`.github/workflows/terraform.yml`**: Automatically resolves the current AWS Account ID and Region, injecting them into the K8s manifests during the infra deployment.
+- **`.github/workflows/deploy-frontend.yml`**: Automatically builds and pushes the frontend image, then updates the K8s deployment to use the specific Git commit SHA.
 
 ---
 
@@ -330,7 +326,7 @@ terraform output rds_endpoint
 
 # Connect and run init_db.sql (from a pod or bastion)
 kubectl run db-init --rm -it --image=postgres:15 -n services -- \
-  psql "postgresql://dbadmin:YOUR_PASSWORD@YOUR_RDS_HOST:5432/hiring_system" \
+  psql "postgresql://dbadmin:YOUR_PASSWORD@hiring-system-dev-postgres.c9essouqsmqs.ap-southeast-1.rds.amazonaws.com:5432/hiring_system" \
   -f /dev/stdin < ../../db/init_db.sql
 ```
 
