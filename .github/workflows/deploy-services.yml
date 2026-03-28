@@ -17,7 +17,7 @@ on:
           - dev
           - staging
           - prod
-        default: staging
+        default: dev
 
 env:
   TF_DIR: infra/terraform
