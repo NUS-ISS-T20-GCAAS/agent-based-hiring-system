@@ -39,7 +39,7 @@ jobs:
 
   # 2. Deploy Job
   deploy:
-    if: ${{ always() && needs.build.result == 'success' && github.event_name != 'pull_request' }}
+    if: ${{ always() && (needs.build.result == 'success' || needs.build.result == 'failure') && github.event_name != 'pull_request' }}
     needs: build
     runs-on: ubuntu-latest
     environment:
@@ -79,6 +79,34 @@ jobs:
           echo "ecr_base_url=$ECR_BASE_URL" >> "$GITHUB_OUTPUT"
         working-directory: ${{ env.TF_DIR }}
 
+      - name: Download successful build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: success-*
+          path: successful-builds
+          merge-multiple: true
+        continue-on-error: true
+
+      - name: Determine successful services
+        id: parse-success
+        run: |
+          SERVICES=()
+          if [ -d "successful-builds" ]; then
+            for file in successful-builds/success-*.txt; do
+              [ -e "$file" ] || continue
+              svc=$(cat "$file")
+              SERVICES+=("$svc")
+            done
+          fi
+          
+          if [ ${#SERVICES[@]} -eq 0 ]; then
+            echo "❌ No services built successfully. Exiting deployment."
+            exit 1
+          fi
+          
+          echo "Successfully built services: ${SERVICES[*]}"
+          echo "services=${SERVICES[*]}" >> $GITHUB_OUTPUT
+
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
@@ -86,12 +114,12 @@ jobs:
       - name: Transfer Images (GHCR → ECR)
         run: |
           REPO_LOWER=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
-          SERVICES=("coordinator-agent" "resume-intake-agent" "screening-agent")
+          SUCCESS_SERVICES=(${{ steps.parse-success.outputs.services }})
           
           echo "Logging into GHCR..."
           echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
           
-          for SERVICE in "${SERVICES[@]}"; do
+          for SERVICE in "${SUCCESS_SERVICES[@]}"; do
             GHCR_IMAGE="ghcr.io/${REPO_LOWER}/${SERVICE}:${IMAGE_TAG}"
             ECR_IMAGE="${{ steps.tf-outputs.outputs.ecr_base_url }}/${SERVICE}:${IMAGE_TAG}"
 
@@ -111,23 +139,32 @@ jobs:
         run: |
           ACCOUNT_ID="${{ steps.tf-outputs.outputs.account_id }}"
           REGION="${{ env.AWS_REGION }}"
+          SUCCESS_SERVICES=(${{ steps.parse-success.outputs.services }})
           
-          for file in ${{ env.TF_DIR }}/k8s/*-agent-deployment.yaml; do
-            echo "Processing $file..."
-            sed -i "s/<ACCOUNT_ID>/$ACCOUNT_ID/g" "$file"
-            sed -i "s/<REGION>/$REGION/g" "$file"
-            sed -i "s/<IMAGE_TAG>/${IMAGE_TAG}/g" "$file"
-            
-            # Since the YAML has '...:latest' by default in some places, 
-            # ensure we replace the whole tag properly if it exists
-            sed -i "s/:latest/:${IMAGE_TAG}/g" "$file"
-            
-            kubectl apply -f "$file"
+          for SERVICE in "${SUCCESS_SERVICES[@]}"; do
+            file="${{ env.TF_DIR }}/k8s/${SERVICE}-deployment.yaml"
+            if [ -f "$file" ]; then
+              echo "Processing $file..."
+              sed -i "s/<ACCOUNT_ID>/$ACCOUNT_ID/g" "$file"
+              sed -i "s/<REGION>/$REGION/g" "$file"
+              sed -i "s/<IMAGE_TAG>/${IMAGE_TAG}/g" "$file"
+              
+              # Since the YAML has '...:latest' by default in some places, 
+              # ensure we replace the whole tag properly if it exists
+              sed -i "s/:latest/:${IMAGE_TAG}/g" "$file"
+              
+              kubectl apply -f "$file"
+            else
+              echo "Warning: No K8s manifest found for ${SERVICE}"
+            fi
           done
           
       - name: Verify Rollout Status
-          # Wait for main services
         run: |
-          kubectl rollout status deployment/coordinator-agent -n services --timeout=300s
-          kubectl rollout status deployment/resume-intake-agent -n services --timeout=300s
-          kubectl rollout status deployment/screening-agent -n services --timeout=300s
+          SUCCESS_SERVICES=(${{ steps.parse-success.outputs.services }})
+          for SERVICE in "${SUCCESS_SERVICES[@]}"; do
+            if kubectl get deployment $SERVICE -n services >/dev/null 2>&1; then
+              echo "Waiting for $SERVICE rollout..."
+              kubectl rollout status deployment/$SERVICE -n services --timeout=300s
+            fi
+          done

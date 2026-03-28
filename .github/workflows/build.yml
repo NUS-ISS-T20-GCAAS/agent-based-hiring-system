@@ -128,3 +128,13 @@ jobs:
       - name: Push Docker image
         run: |
           docker push ghcr.io/${{ env.REPO_LOWER }}/${{ matrix.service }}:${{ github.sha }}
+
+      - name: Record successful build
+        run: echo "${{ matrix.service }}" > success-${{ matrix.service }}.txt
+
+      - name: Upload successful build
+        uses: actions/upload-artifact@v4
+        with:
+          name: success-${{ matrix.service }}
+          path: success-${{ matrix.service }}.txt
+          retention-days: 1
