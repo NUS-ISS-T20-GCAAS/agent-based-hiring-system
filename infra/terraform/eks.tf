@@ -158,7 +158,7 @@ resource "aws_eks_node_group" "general" {
 # Note: EKS managed node groups auto-attach the cluster security group,
 # but we need to ensure the additional node SG is also applied.
 resource "aws_launch_template" "eks_nodes" {
-  name_prefix   = "${local.cluster_name}-nodes-"
+  name_prefix = "${local.cluster_name}-nodes-"
 
   vpc_security_group_ids = [
     aws_eks_cluster.main.vpc_config[0].cluster_security_group_id,
