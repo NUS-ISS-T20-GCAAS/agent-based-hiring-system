@@ -14,77 +14,92 @@ on:
   workflow_dispatch:
     inputs:
       services:
-        description: 'Comma-separated list of services to build (e.g., coordinator-agent,resume-intake-agent) or "all"'
-        required: false
-        default: 'coordinator-agent,resume-intake-agent'
+        description: 'Select service(s) to build'
+        type: choice
+        options:
+          - all
+          - coordinator-agent
+          - resume-intake-agent
+          - screening-agent
+          - ranking-agent
+          - audit-agent
+        required: true
+        default: 'all'
 
 jobs:
-  # detect-changes:
-  #   runs-on: ubuntu-latest
-  #   outputs:
-  #     services: ${{ steps.set-services.outputs.services }}
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      services: ${{ steps.set-services.outputs.services }}
 
-  #   steps:
-  #     - name: Checkout
-  #       uses: actions/checkout@v4
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-  #     # Detect changed services (push / PR only)
-  #     - name: Detect service changes
-  #       uses: dorny/paths-filter@v3
-  #       id: filter
-  #       if: github.event_name != 'workflow_dispatch'
-  #       with:
-  #         list-files: json
-  #         filters: |
-  #           coordinator-agent:
-  #             - services/coordinator-agent/**
-  #           resume-intake-agent:
-  #             - services/resume-intake-agent/**
-  #           screening-agent:
-  #             - services/screening-agent/**
-  #           ranking-agent:
-  #             - services/ranking-agent/**
-  #           audit-agent:
-  #             - services/audit-agent/**
+      # Detect changed services (push / PR only)
+      - name: Detect service changes
+        uses: dorny/paths-filter@v3
+        id: filter
+        if: github.event_name != 'workflow_dispatch'
+        with:
+          list-files: json
+          filters: |
+            coordinator-agent:
+              - services/coordinator-agent/**
+            resume-intake-agent:
+              - services/resume-intake-agent/**
+            screening-agent:
+              - services/screening-agent/**
+            ranking-agent:
+              - services/ranking-agent/**
+            audit-agent:
+              - services/audit-agent/**
 
-  #     # Decide final service list (SINGLE source of truth)
-  #     - name: Set services list
-  #       id: set-services
-  #       shell: bash
-  #       run: |
-  #         if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-  #           SERVICES="${{ github.event.inputs.services }}"
+      # Decide final service list (SINGLE source of truth)
+      - name: Set services list
+        id: set-services
+        shell: bash
+        run: |
+          # 1. Grab services from workflow_call inputs first
+          if [ -n "${{ inputs.services }}" ]; then
+            SERVICES="${{ inputs.services }}"
+          # 2. Or grab from manual workflow_dispatch inputs
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            SERVICES="${{ github.event.inputs.services }}"
+          fi
 
-  #           if [ -z "$SERVICES" ]; then
-  #             echo "❌ No services provided"
-  #             exit 1
-  #           fi
+          if [ -n "$SERVICES" ]; then
+            # Handle the "all" option explicitly
+            if [ "$SERVICES" = "all" ]; then
+              SERVICES="coordinator-agent,resume-intake-agent,screening-agent,ranking-agent,audit-agent"
+            fi
+            
+            # Format the output for the matrix array
+            JSON=$(printf '["%s"]' "${SERVICES//,/\",\"}")
+            echo "services=$JSON" >> $GITHUB_OUTPUT
 
-  #           JSON=$(printf '["%s"]' "${SERVICES//,/\",\"}")
-  #           echo "services=$JSON" >> $GITHUB_OUTPUT
+          else
+            SERVICES='${{ steps.filter.outputs.changes }}'
 
-  #         else
-  #           SERVICES='${{ steps.filter.outputs.changes }}'
+            if [ "$SERVICES" = "[]" ] || [ -z "$SERVICES" ]; then
+              echo "services=[]" >> $GITHUB_OUTPUT
+            else
+              echo "services=$SERVICES" >> $GITHUB_OUTPUT
+            fi
+          fi
 
-  #           if [ "$SERVICES" = "[]" ] || [ -z "$SERVICES" ]; then
-  #             echo "services=[]" >> $GITHUB_OUTPUT
-  #           else
-  #             echo "services=$SERVICES" >> $GITHUB_OUTPUT
-  #           fi
-  #         fi
-
-  #     - name: Debug services
-  #       run: |
-  #         echo "Services to build: ${{ steps.set-services.outputs.services }}"
+      - name: Debug services
+        run: |
+          echo "Services to build: ${{ steps.set-services.outputs.services }}"
 
   build:
-    # needs: detect-changes
-    # if: needs.detect-changes.outputs.services != '[]'
+    needs: detect-changes
+    if: needs.detect-changes.outputs.services != '[]'
     runs-on: ubuntu-latest
 
-    # strategy:
-    #   matrix:
-    #     service: ${{ fromJson(needs.detect-changes.outputs.services) }}
+    strategy:
+      matrix:
+        service: ${{ fromJson(needs.detect-changes.outputs.services) }}
 
     steps:
       - name: Checkout
