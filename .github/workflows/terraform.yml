@@ -1,6 +1,13 @@
 name: Terraform Infrastructure
 
 on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'infra/terraform/**'
+  pull_request:
+    paths:
+      - 'infra/terraform/**'
   workflow_dispatch:
     inputs:
       environment:
