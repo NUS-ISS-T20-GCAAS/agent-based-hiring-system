@@ -1,15 +1,22 @@
 import re
+import uuid
 from datetime import date, datetime
 from decimal import Decimal
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 import requests
 
-from app.schemas import JobRequest, JobResponse, Artifact
+from app.schemas import Artifact, JobRequest, JobResponse, RunRequest
 from app.coordinator import run_job
 from app.repository import CoordinatorRepository
 from app.resume_parser import ResumeParsingError, extract_resume_text
 
-from app.config import AUDIT_AGENT_URL, RESUME_INTAKE_AGENT_URL, SCREENING_AGENT_URL, REQUEST_TIMEOUT
+from app.config import (
+    AUDIT_AGENT_URL,
+    RANKING_AGENT_URL,
+    REQUEST_TIMEOUT,
+    RESUME_INTAKE_AGENT_URL,
+    SCREENING_AGENT_URL,
+)
 from app.logger import get_logger
 
 router = APIRouter()
@@ -190,7 +197,41 @@ def list_jobs():
 def rank_job_candidates(job_id: str):
     repository = CoordinatorRepository()
     _job_or_404(repository, job_id)
-    ranked = repository.rank_candidates(job_id=job_id)
+
+    rows = repository.list_candidates(job_id=job_id)
+    if not rows:
+        return {
+            "job_id": job_id,
+            "ranked_candidates": 0,
+            "status": "completed",
+        }
+
+    run_request = RunRequest(
+        entity_id=job_id,
+        correlation_id=str(uuid.uuid4()),
+        input_data={
+            "job_id": job_id,
+            "candidates": [_candidate_payload(row) for row in rows],
+        },
+    )
+
+    try:
+        response = requests.post(
+            f"{RANKING_AGENT_URL}/run",
+            json=_json_safe(run_request.model_dump()),
+            timeout=REQUEST_TIMEOUT,
+        )
+        response.raise_for_status()
+        artifact = Artifact.model_validate(response.json())
+    except requests.exceptions.RequestException as exc:
+        logger.error("ranking_failed", entity_id=job_id, error=str(exc))
+        raise HTTPException(status_code=503, detail="ranking unavailable")
+
+    payload = artifact.payload if isinstance(artifact.payload, dict) else {}
+    ranked = repository.apply_candidate_ranking(
+        job_id=job_id,
+        ranked_candidates=payload.get("ranked_candidates") or [],
+    )
     return {
         "job_id": job_id,
         "ranked_candidates": ranked,
@@ -349,6 +390,7 @@ def get_agent_status():
         ("coordinator", "http://localhost:8000/health"),
         ("resume-intake", f"{RESUME_INTAKE_AGENT_URL}/health"),
         ("screening", f"{SCREENING_AGENT_URL}/health"),
+        ("ranking", f"{RANKING_AGENT_URL}/health"),
         ("audit", f"{AUDIT_AGENT_URL}/health"),
     ]
 

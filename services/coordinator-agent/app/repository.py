@@ -9,6 +9,14 @@ from app.schemas import Artifact
 
 
 class CoordinatorRepository:
+    @staticmethod
+    def _ranking_outcome(score: float) -> tuple[str, str]:
+        if score >= 0.70:
+            return "SHORTLIST", "shortlisted"
+        if score >= 0.45:
+            return "CONSIDER", "screened"
+        return "REJECT", "rejected"
+
     def upsert_job(self, *, job_id: str, job_description: str, job_requirements: dict[str, Any]) -> None:
         with transaction() as conn:
             with conn.cursor() as cur:
@@ -456,50 +464,40 @@ class CoordinatorRepository:
                     "avg_score": 0,
                 }
 
-    def rank_candidates(self, *, job_id: str) -> int:
+    def apply_candidate_ranking(self, *, job_id: str, ranked_candidates: list[dict[str, Any]]) -> int:
+        updates: list[tuple[float, str, str, str, str]] = []
+        for item in ranked_candidates:
+            candidate_id = item.get("candidate_id") or item.get("id")
+            if not isinstance(candidate_id, str) or not candidate_id.strip():
+                continue
+
+            score_value = item.get("score")
+            score = float(score_value) if isinstance(score_value, (int, float)) else 0.0
+            recommendation, status = self._ranking_outcome(score)
+            updates.append((round(score, 4), recommendation, status, candidate_id, job_id))
+
+        if not updates:
+            return 0
+
         with transaction() as conn:
             with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    UPDATE candidates
-                    SET
-                        skills_score = COALESCE(skills_score, 0),
-                        qualification_score = COALESCE(qualification_score, 0),
-                        composite_score = ROUND(
-                            (
-                                COALESCE(qualification_score, 0) * 0.7
-                                + COALESCE(skills_score, 0) * 0.3
-                            )::numeric,
-                            4
-                        ),
-                        recommendation = CASE
-                            WHEN (
-                                COALESCE(qualification_score, 0) * 0.7
-                                + COALESCE(skills_score, 0) * 0.3
-                            ) >= 0.70 THEN 'SHORTLIST'
-                            WHEN (
-                                COALESCE(qualification_score, 0) * 0.7
-                                + COALESCE(skills_score, 0) * 0.3
-                            ) >= 0.45 THEN 'CONSIDER'
-                            ELSE 'REJECT'
-                        END,
-                        status = CASE
-                            WHEN (
-                                COALESCE(qualification_score, 0) * 0.7
-                                + COALESCE(skills_score, 0) * 0.3
-                            ) >= 0.70 THEN 'shortlisted'
-                            WHEN (
-                                COALESCE(qualification_score, 0) * 0.7
-                                + COALESCE(skills_score, 0) * 0.3
-                            ) >= 0.45 THEN 'screened'
-                            ELSE 'rejected'
-                        END,
-                        updated_at = NOW()
-                    WHERE job_id = %s
-                    """,
-                    (job_id,),
-                )
-                updated = cur.rowcount
+                updated = 0
+                for score, recommendation, status, candidate_id, entity_job_id in updates:
+                    cur.execute(
+                        """
+                        UPDATE candidates
+                        SET
+                            composite_score = %s,
+                            recommendation = %s,
+                            status = %s,
+                            updated_at = NOW()
+                        WHERE candidate_id = %s::uuid
+                          AND job_id = %s
+                        """,
+                        (score, recommendation, status, candidate_id, entity_job_id),
+                    )
+                    updated += cur.rowcount
+
                 if updated > 0:
                     cur.execute(
                         """

@@ -38,6 +38,9 @@ class FakeResponse:
 
 
 class FakeRepository:
+    def __init__(self):
+        self.applied_ranking = None
+
     def list_jobs(self):
         return [
             {
@@ -167,8 +170,12 @@ class FakeRepository:
             "avg_score": 0.66,
         }
 
-    def rank_candidates(self, *, job_id: str):
-        return 1
+    def apply_candidate_ranking(self, *, job_id: str, ranked_candidates):
+        self.applied_ranking = {
+            "job_id": job_id,
+            "ranked_candidates": ranked_candidates,
+        }
+        return len(ranked_candidates)
 
 
 class FakeUploadFile:
@@ -225,9 +232,46 @@ def build_docx_bytes(text: str) -> bytes:
 
 
 class RoutesReadApiTests(unittest.TestCase):
+    @patch("app.routes.requests.post")
     @patch("app.routes.CoordinatorRepository")
-    def test_jobs_candidates_and_stats_routes(self, repo_cls):
-        repo_cls.return_value = FakeRepository()
+    def test_jobs_candidates_and_stats_routes(self, repo_cls, post_mock):
+        repository = FakeRepository()
+        repo_cls.return_value = repository
+        post_mock.return_value = FakeResponse(
+            {
+                "artifact_id": "a-rank",
+                "entity_id": "job-1",
+                "correlation_id": "cid-rank",
+                "agent_id": "ranking-agent",
+                "agent_type": "ranking",
+                "artifact_type": "candidate_ranking_result",
+                "payload": {
+                    "job_id": "job-1",
+                    "ranked_candidates": [
+                        {
+                            "candidate_id": "c-1",
+                            "name": "Alice",
+                            "recommendation": "SHORTLIST",
+                            "score": 0.77,
+                            "scores": {
+                                "qualification": 0.8,
+                                "skills": 0.7,
+                                "composite": 0.77,
+                            },
+                            "rank": 1,
+                        }
+                    ],
+                    "top_candidate_id": "c-1",
+                    "total_candidates": 1,
+                    "avg_score": 0.77,
+                    "details": {"method": "heuristic_composite_score", "top_k": None},
+                },
+                "confidence": 0.6,
+                "explanation": "ranking ok",
+                "created_at": "2026-03-25T10:00:00+00:00",
+                "version": 1,
+            }
+        )
 
         jobs = list_jobs()
         self.assertEqual(len(jobs), 1)
@@ -268,6 +312,33 @@ class RoutesReadApiTests(unittest.TestCase):
 
         rank_result = rank_job_candidates("job-1")
         self.assertEqual(rank_result["ranked_candidates"], 1)
+        self.assertEqual(repository.applied_ranking["job_id"], "job-1")
+        self.assertEqual(repository.applied_ranking["ranked_candidates"][0]["candidate_id"], "c-1")
+        self.assertEqual(post_mock.call_count, 1)
+
+    @patch("app.routes.requests.post")
+    @patch("app.routes.CoordinatorRepository")
+    def test_rank_job_candidates_returns_zero_without_remote_call_when_job_has_no_candidates(self, repo_cls, post_mock):
+        repository = FakeRepository()
+        repository.list_candidates = lambda **_kwargs: []
+        repo_cls.return_value = repository
+
+        result = rank_job_candidates("job-1")
+
+        self.assertEqual(result, {"job_id": "job-1", "ranked_candidates": 0, "status": "completed"})
+        self.assertIsNone(repository.applied_ranking)
+        self.assertEqual(post_mock.call_count, 0)
+
+    @patch("app.routes.requests.post", side_effect=requests.exceptions.ConnectionError("boom"))
+    @patch("app.routes.CoordinatorRepository")
+    def test_rank_job_candidates_returns_503_when_ranking_agent_fails(self, repo_cls, _post_mock):
+        repo_cls.return_value = FakeRepository()
+
+        with self.assertRaises(HTTPException) as exc_info:
+            rank_job_candidates("job-1")
+
+        self.assertEqual(exc_info.exception.status_code, 503)
+        self.assertEqual(exc_info.exception.detail, "ranking unavailable")
 
     @patch("app.routes.CoordinatorRepository")
     def test_not_found_routes(self, repo_cls):
