@@ -1,0 +1,62 @@
+name: Deploy Database Changes
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'db/**'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+
+jobs:
+  deploy-sql:
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'dev' }}
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install PostgreSQL Client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Run Database Initialization & Migrations
+        env:
+          PGHOST: ${{ secrets.DB_HOST }}
+          PGPORT: ${{ secrets.DB_PORT }}
+          PGUSER: ${{ secrets.DB_USER }}
+          PGPASSWORD: ${{ secrets.DB_PASSWORD }}
+          PGDATABASE: ${{ secrets.DB_NAME }}
+        run: |
+          echo "Deploying SQL scripts to $PGDATABASE on $PGHOST..."
+          
+          # Set the PGPASSWORD environment variable so psql uses it automatically
+          export PGPASSWORD=$PGPASSWORD
+          
+          # Run the main initialization script
+          echo "Applying init_db.sql..."
+          psql -v ON_ERROR_STOP=1 -f db/init_db.sql
+          
+          # Optionally run any migration scripts found in db/migrations/
+          if [ -d "db/migrations" ]; then
+            for file in db/migrations/*.sql; do
+              if [ -f "$file" ]; then
+                echo "Applying migration: $(basename "$file")"
+                psql -v ON_ERROR_STOP=1 -f "$file"
+              fi
+            done
+          fi
+
+          echo "Database update completed successfully."

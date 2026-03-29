@@ -44,7 +44,7 @@ Ranking exists as a separate service, but it is not part of the default intake -
 - [ ] Domain name and SSL certificate
 - [x] Update services' pipeline to automate the build and deploy process in a single workflow
 - [x] Deploy coordinator-agent, resume-intake-agent, and screening-agent to EKS
-- [ ] Pending deployment for audit-agent and ranking-agent
+- [x] Pending deployment for audit-agent and ranking-agent
 - [ ] Import database schema to hiring-system-dev-postgres
 - [ ] Update coordinator-agent, resume-intake-agent, and screening-agent to use RDS PostgreSQL 15
 
