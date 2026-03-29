@@ -1,8 +1,11 @@
 name: "Terraform Manage (Destroy / Recreate) for cost saving"
 
 # ────────────────────────────────────────────────
-# Manual-only workflow to destroy or recreate the
-# EKS cluster and related expensive resources.
+# Manual-only workflow: single run that destroys
+# expensive resources, then waits for approval
+# before recreating them.
+#
+# Flow:  Destroy → ⏸️ Approval Gate → Recreate
 #
 # DESTROY targets (saves ~$3.50/day):
 #   - EKS Cluster control plane ($2.40/day)
@@ -17,18 +20,15 @@ name: "Terraform Manage (Destroy / Recreate) for cost saving"
 #   - ECR Repositories (container images preserved)
 #   - IAM Roles & Policies
 #   - Security Groups
+#
+# Setup: Reuses the "terraform-dev" GitHub
+# Environment (with Required Reviewers) from
+# terraform.yml for the approval gate.
 # ────────────────────────────────────────────────
 
 on:
   workflow_dispatch:
     inputs:
-      action:
-        description: "Action to perform"
-        required: true
-        type: choice
-        options:
-          - destroy
-          - recreate
       environment:
         description: "Target environment"
         required: true
@@ -40,7 +40,7 @@ on:
         default: dev
       confirm:
         description: "Type 'yes' to confirm destroy"
-        required: false
+        required: true
         type: string
         default: ""
 
@@ -55,12 +55,13 @@ permissions:
 
 jobs:
   # ════════════════════════════════════════════════
-  #  DESTROY — Tear down all Terraform resources
+  #  DESTROY — Tear down expensive resources
   # ════════════════════════════════════════════════
   destroy:
     name: "🔴 Destroy Infrastructure"
-    if: github.event.inputs.action == 'destroy' && github.event.inputs.confirm == 'yes'
+    if: github.event.inputs.confirm == 'yes'
     runs-on: ubuntu-latest
+    environment: terraform-${{ github.event.inputs.environment }}
     env:
       TF_VAR_db_password: ${{ secrets.TF_VAR_DB_PASSWORD }}
     steps:
@@ -147,6 +148,7 @@ jobs:
           echo "  ├── EKS Fargate Profiles"
           echo "  ├── EKS Access Entries & Policies"
           echo "  ├── Launch Template"
+          echo "  ├── OIDC Provider"
           echo "  ├── NAT Gateway (\$0.045/hr)"
           echo "  └── Elastic IP"
           echo ""
@@ -179,12 +181,14 @@ jobs:
           echo "✅ Expensive resources destroyed successfully!"
           echo "   Saved: ~\$3.50/day (EKS control plane + NAT + EIP)"
           echo "   Kept:  VPC, Subnets, RDS, ECR, IAM roles"
-          echo "   Use the 'recreate' action to bring everything back."
+          echo ""
+          echo "⏸️  The 'Recreate' job is now waiting for your approval."
+          echo "   Go to the Actions tab → this run → approve the 'recreate-dev' environment to bring everything back."
         working-directory: ${{ env.TF_DIR }}
 
   destroy-guard:
     name: "⚠️ Destroy Rejected (confirm not set)"
-    if: github.event.inputs.action == 'destroy' && github.event.inputs.confirm != 'yes'
+    if: github.event.inputs.confirm != 'yes'
     runs-on: ubuntu-latest
     steps:
       - name: Rejected
@@ -194,12 +198,19 @@ jobs:
           exit 1
 
   # ════════════════════════════════════════════════
-  #  RECREATE — Apply all Terraform + Deploy K8s
+  #  RECREATE — Terraform Apply (requires approval)
+  #
+  #  This job waits for manual approval via the
+  #  GitHub Environment protection rule on
+  #  "terraform-dev" (reuses the same environment
+  #  as terraform.yml — safe because environments
+  #  are only approval gates, not workflow triggers).
   # ════════════════════════════════════════════════
   recreate-apply:
     name: "🟢 Recreate — Terraform Apply"
-    if: github.event.inputs.action == 'recreate'
+    needs: destroy
     runs-on: ubuntu-latest
+    environment: terraform-${{ github.event.inputs.environment }}
     env:
       TF_VAR_db_password: ${{ secrets.TF_VAR_DB_PASSWORD }}
     steps:
@@ -243,6 +254,9 @@ jobs:
         run: terraform output -no-color
         working-directory: ${{ env.TF_DIR }}
 
+  # ════════════════════════════════════════════════
+  #  DEPLOY K8s — Restore workloads with saved tags
+  # ════════════════════════════════════════════════
   recreate-k8s:
     name: "🟢 Recreate — Deploy K8s"
     needs: recreate-apply
@@ -317,7 +331,7 @@ jobs:
         id: image-tags
         run: |
           if [ -f "${{ env.TF_DIR }}/image-tags.json" ]; then
-            echo "📦 Found saved image tags from previous destroy:"
+            echo "📦 Found saved image tags from destroy job:"
             cat ${{ env.TF_DIR }}/image-tags.json
             FE_TAG=$(cat ${{ env.TF_DIR }}/image-tags.json | python3 -c "import sys,json; print(json.load(sys.stdin)['frontend'])")
             COORD_TAG=$(cat ${{ env.TF_DIR }}/image-tags.json | python3 -c "import sys,json; print(json.load(sys.stdin)['coordinator-agent'])")
