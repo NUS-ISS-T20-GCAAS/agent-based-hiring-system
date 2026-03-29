@@ -71,9 +71,17 @@ class FakeRepository:
 
 
 class CoordinatorRunJobTests(unittest.TestCase):
+    @patch("app.coordinator.emit_candidate_update")
+    @patch("app.coordinator.emit_agent_activity")
     @patch("app.coordinator.time.sleep", return_value=None)
     @patch("app.coordinator.requests.post")
-    def test_run_job_calls_intake_then_screening_then_audit(self, post_mock, _sleep_mock):
+    def test_run_job_calls_intake_then_screening_then_audit(
+        self,
+        post_mock,
+        _sleep_mock,
+        agent_activity_mock,
+        candidate_update_mock,
+    ):
         intake_artifact = {
             "artifact_id": "a-intake",
             "entity_id": "job-123",
@@ -186,6 +194,19 @@ class CoordinatorRunJobTests(unittest.TestCase):
                 ],
                 "escalation_source": "screening_and_audit",
             },
+        )
+        self.assertGreaterEqual(agent_activity_mock.call_count, 6)
+        candidate_update_mock.assert_any_call(
+            job_id="job-123",
+            candidate_id="11111111-1111-1111-1111-111111111111",
+            status="processing",
+            correlation_id=result.correlation_id,
+        )
+        candidate_update_mock.assert_any_call(
+            job_id="job-123",
+            candidate_id="11111111-1111-1111-1111-111111111111",
+            status="shortlisted",
+            correlation_id=result.correlation_id,
         )
 
     @patch("app.coordinator.time.sleep", return_value=None)

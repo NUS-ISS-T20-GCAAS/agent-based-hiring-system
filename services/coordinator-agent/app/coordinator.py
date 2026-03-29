@@ -5,6 +5,7 @@ from decimal import Decimal
 import requests
 from fastapi import HTTPException
 
+from app.events import emit_agent_activity, emit_candidate_update
 from app.schemas import JobRequest, JobResponse, RunRequest, Artifact
 from app.logger import get_logger
 from app.config import AUDIT_AGENT_URL, RESUME_INTAKE_AGENT_URL, SCREENING_AGENT_URL, REQUEST_TIMEOUT
@@ -238,6 +239,19 @@ def run_job(
             correlation_id=correlation_id,
             current_step="resume-intake",
         )
+        emit_agent_activity(
+            agent="coordinator",
+            message=f"Started workflow for job {entity_id}",
+            correlation_id=correlation_id,
+            entity_id=entity_id,
+            candidate_id=candidate_id,
+        )
+        emit_candidate_update(
+            job_id=entity_id,
+            candidate_id=candidate_id,
+            status="processing",
+            correlation_id=correlation_id,
+        )
     except Exception as exc:
         logger.error(
             "job_persist_bootstrap_failed",
@@ -259,6 +273,13 @@ def run_job(
 
     current_step = "resume-intake"
     try:
+        emit_agent_activity(
+            agent="resume-intake",
+            message=f"Starting resume intake for job {entity_id}",
+            correlation_id=correlation_id,
+            entity_id=entity_id,
+            candidate_id=candidate_id,
+        )
         intake_artifact = _post_with_retries(
             target="resume-intake",
             url=f"{RESUME_INTAKE_AGENT_URL}/run",
@@ -270,6 +291,13 @@ def run_job(
             job_id=entity_id,
             candidate_id=candidate_id,
             artifact=intake_artifact,
+        )
+        emit_agent_activity(
+            agent="resume-intake",
+            message="Resume intake completed",
+            correlation_id=correlation_id,
+            entity_id=entity_id,
+            candidate_id=candidate_id,
         )
 
         current_step = "screening"
@@ -285,6 +313,13 @@ def run_job(
             },
         )
 
+        emit_agent_activity(
+            agent="screening",
+            message="Starting qualification screening",
+            correlation_id=correlation_id,
+            entity_id=entity_id,
+            candidate_id=candidate_id,
+        )
         screening_artifact = _post_with_retries(
             target="screening",
             url=f"{SCREENING_AGENT_URL}/run",
@@ -296,6 +331,13 @@ def run_job(
             job_id=entity_id,
             candidate_id=candidate_id,
             artifact=screening_artifact,
+        )
+        emit_agent_activity(
+            agent="screening",
+            message="Qualification screening completed",
+            correlation_id=correlation_id,
+            entity_id=entity_id,
+            candidate_id=candidate_id,
         )
 
         current_step = "audit"
@@ -312,6 +354,13 @@ def run_job(
             ),
         )
 
+        emit_agent_activity(
+            agent="audit",
+            message="Starting audit review",
+            correlation_id=correlation_id,
+            entity_id=entity_id,
+            candidate_id=candidate_id,
+        )
         audit_artifact = _post_with_retries(
             target="audit",
             url=f"{AUDIT_AGENT_URL}/run",
@@ -336,6 +385,29 @@ def run_job(
             screening_payload=screening_artifact.payload if isinstance(screening_artifact.payload, dict) else None,
             review_state=review_state,
         )
+        emit_agent_activity(
+            agent="audit",
+            message="Audit review completed",
+            correlation_id=correlation_id,
+            entity_id=entity_id,
+            candidate_id=candidate_id,
+        )
+        emit_agent_activity(
+            agent="coordinator",
+            message="Workflow completed successfully",
+            correlation_id=correlation_id,
+            entity_id=entity_id,
+            candidate_id=candidate_id,
+        )
+        final_status, _recommendation = _screening_status(
+            screening_artifact.payload if isinstance(screening_artifact.payload, dict) else None,
+        )
+        emit_candidate_update(
+            job_id=entity_id,
+            candidate_id=candidate_id,
+            status=final_status,
+            correlation_id=correlation_id,
+        )
     except HTTPException as exc:
         try:
             repository.mark_workflow_failed(
@@ -352,6 +424,19 @@ def run_job(
                 correlation_id=correlation_id,
                 error=str(persist_exc),
             )
+        emit_agent_activity(
+            agent="coordinator",
+            message=f"Workflow failed during {current_step}: {exc.detail}",
+            correlation_id=correlation_id,
+            entity_id=entity_id,
+            candidate_id=candidate_id,
+        )
+        emit_candidate_update(
+            job_id=entity_id,
+            candidate_id=candidate_id,
+            status="rejected",
+            correlation_id=correlation_id,
+        )
         raise
     except Exception as exc:
         try:
@@ -369,6 +454,19 @@ def run_job(
                 correlation_id=correlation_id,
                 error=str(persist_exc),
             )
+        emit_agent_activity(
+            agent="coordinator",
+            message=f"Workflow failed during {current_step}: {exc}",
+            correlation_id=correlation_id,
+            entity_id=entity_id,
+            candidate_id=candidate_id,
+        )
+        emit_candidate_update(
+            job_id=entity_id,
+            candidate_id=candidate_id,
+            status="rejected",
+            correlation_id=correlation_id,
+        )
         raise HTTPException(status_code=500, detail="coordinator execution failed")
 
     logger.info(

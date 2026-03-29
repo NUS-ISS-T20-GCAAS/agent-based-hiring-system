@@ -7,6 +7,7 @@ import requests
 
 from app.schemas import Artifact, JobRequest, JobResponse, RunRequest
 from app.coordinator import run_job
+from app.events import emit_agent_activity, emit_candidate_update
 from app.repository import CoordinatorRepository
 from app.resume_parser import ResumeParsingError, extract_resume_text
 
@@ -232,6 +233,12 @@ def rank_job_candidates(job_id: str):
         job_id=job_id,
         ranked_candidates=payload.get("ranked_candidates") or [],
     )
+    emit_agent_activity(
+        agent="ranking",
+        message=f"Re-ranked {ranked} candidates for job {job_id}",
+        entity_id=job_id,
+    )
+    emit_candidate_update(job_id=job_id, status="ranking_completed")
     return {
         "job_id": job_id,
         "ranked_candidates": ranked,

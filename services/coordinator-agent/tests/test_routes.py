@@ -6,10 +6,12 @@ from unittest.mock import patch
 
 import requests
 from fastapi import HTTPException
+from fastapi.testclient import TestClient
 from docx import Document
 from pypdf import PdfWriter
 from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
 
+from app.main import app
 from app.routes import (
     get_job_artifacts,
     list_jobs,
@@ -232,6 +234,18 @@ def build_docx_bytes(text: str) -> bytes:
 
 
 class RoutesReadApiTests(unittest.TestCase):
+    def test_websocket_endpoint_accepts_connections_and_replies_to_ping(self):
+        client = TestClient(app)
+
+        with client.websocket_connect("/ws") as websocket:
+            connection_message = websocket.receive_json()
+            self.assertEqual(connection_message["type"], "connection")
+            self.assertEqual(connection_message["data"]["service"], "coordinator")
+
+            websocket.send_text("ping")
+            pong_message = websocket.receive_json()
+            self.assertEqual(pong_message["type"], "pong")
+
     @patch("app.routes.requests.post")
     @patch("app.routes.CoordinatorRepository")
     def test_jobs_candidates_and_stats_routes(self, repo_cls, post_mock):
