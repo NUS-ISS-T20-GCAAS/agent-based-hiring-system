@@ -2,63 +2,50 @@
 
 An explainable hiring workflow built as cooperating services:
 
-- `frontend` for the UI
-- `coordinator-agent` for orchestration
-- `resume-intake-agent` for profile extraction
-- `screening-agent` for qualification scoring
-- `postgres` for workflow and artifact persistence
-- `terraform` for infrastructure deployment
+- `frontend` for the recruiter dashboard
+- `coordinator-agent` for orchestration and persistence
+- `resume-intake-agent` for structured resume extraction
+- `screening-agent` for qualification scoring and review flags
+- `audit-agent` for bias and compliance checks
+- `ranking-agent` for manual re-ranking of candidates in a job
+- `postgres` for jobs, candidates, workflow runs, and artifacts
+- `infra/terraform` for AWS infrastructure definitions
 
 ## Current Status
 
-The current vertical slice is working end-to-end for text-based resume processing:
+The current codebase supports a working synchronous backend flow:
 
-1. Submit a job or uploaded resume to the coordinator
-2. Coordinator calls resume intake
-3. Resume intake returns structured candidate data
-4. Coordinator calls screening
-5. Screening returns a qualification result
-6. Jobs, candidates, workflow runs, and artifacts are persisted in Postgres
-7. Frontend-facing read APIs return DB-backed data
+1. Create a job-level run with `POST /jobs`, or upload resumes to an existing job with `POST /candidates/upload` or `POST /candidates/batch-upload`.
+2. The coordinator upserts the job, creates a candidate, and opens a workflow run.
+3. The coordinator calls `resume-intake-agent`.
+4. The coordinator calls `screening-agent`.
+5. The coordinator calls `audit-agent`.
+6. The coordinator persists artifacts from each completed step in Postgres.
+7. The coordinator updates candidate scores, recommendation, and human-review state.
+8. The frontend reads jobs, candidates, stats, decision history, and audit output from coordinator APIs.
 
-### For infrastructure progress
-1. Finished EKS cluster with Fargate and managed node group
-2. Hosted frontend on EKS with ALB
-   - DNS name (ELB): `http://a237b86696f4a4559a776297a3ab85a9-173539850.ap-southeast-1.elb.amazonaws.com/`
-3. Linked frontend to coordinator-agent in EKS
-4. Setup ECR repositories
-   - `arn:aws:ecr:ap-southeast-1:693517970860:repository/hiring-system/coordinator-agent`
-   - `arn:aws:ecr:ap-southeast-1:693517970860:repository/hiring-system/resume-intake-agent`
-   - `arn:aws:ecr:ap-southeast-1:693517970860:repository/hiring-system/screening-agent`
-   - `arn:aws:ecr:ap-southeast-1:693517970860:repository/hiring-system/frontend`
-5. Updated frontend's pipeline to push to ECR and deploy to EKS, merged frontend-build.yml into frontend-deploy.yml to automate the build and deploy process
-6. Setup RDS PostgreSQL 15 (Login AWS Console -> RDS -> Databases -> hiring-system-dev-postgres for endpoint and credentials)
-
-#### Pending infrastructure tasks
-- [ ] Domain name and SSL certificate
-- [ ] Update services' pipeline to automate the build and deploy process in a single workflow
-- [ ] Deploy coordinator-agent, resume-intake-agent, and screening-agent to EKS
-- [ ] Import database schema to hiring-system-dev-postgres
-- [ ] Update coordinator-agent, resume-intake-agent, and screening-agent to use RDS PostgreSQL 15
+Ranking exists as a separate service, but it is not part of the default intake -> screening -> audit pipeline. It is triggered on demand through `POST /jobs/{job_id}/rank`.
 
 ## Tech Stack
 
 - Python 3.11
 - FastAPI
 - PostgreSQL 15
+- React 18 + Vite + Tailwind CSS
 - Docker / Docker Compose
-- Kubernetes 1.32
-- OpenAI API (optional at runtime)
+- Terraform for AWS infrastructure
+- OpenAI API for model-backed agent execution when configured
 
 ## Architecture Notes
 
-- Agents follow a common contract with `payload`, `confidence`, and `explanation`
-- The coordinator handles orchestration and persistence
-- Artifacts are replayable through the coordinator
-- Agent services can use OpenAI when `OPENAI_API_KEY` is configured
-- If no key is configured, resume intake and screening fall back to heuristic logic
+- Agents share a common artifact contract with `payload`, `confidence`, and `explanation`.
+- The coordinator is the system of record for workflow orchestration and persistence.
+- Agent-local shared memory is still present for service-level replay and diagnostics.
+- Resume intake, screening, and audit attempt OpenAI-backed execution when `OPENAI_API_KEY` is configured.
+- Ranking is currently heuristic only.
+- Screening and audit can jointly escalate candidates for human review.
 
-## Implemented APIs
+## Implemented Coordinator APIs
 
 The coordinator currently exposes:
 
@@ -75,24 +62,57 @@ The coordinator currently exposes:
 - `GET /stats`
 - `GET /agents/status`
 - `GET /audit/bias-check`
+- `GET /health`
+
+The frontend calls these through an `/api/` proxy when running behind the bundled Nginx config.
+
+## Data Stored In Postgres
+
+The coordinator persists workflow state across:
+
+- `jobs`
+- `candidates`
+- `workflow_runs`
+- `artifacts`
+
+The `jobs` table also stores `job_requirements`, and the `candidates` table stores review state:
+
+- `needs_human_review`
+- `review_status`
+- `review_reasons`
+- `escalation_source`
+
+## Resume Upload Support
+
+Uploaded resumes are parsed in the coordinator before the workflow begins.
+
+Supported file types:
+
+- `.txt`
+- `.pdf`
+- `.docx`
+
+Implementation notes:
+
+- TXT files are decoded directly.
+- PDF extraction uses `pypdf`.
+- DOCX extraction uses `python-docx`.
+- Unsupported file types return HTTP `415`.
 
 ## OpenAI Integration
 
-Two agent roles are wired for model-backed execution:
+Model-backed execution is currently wired for:
 
-- Resume intake:
-  - `/Users/isaactan/Projects/agent-based-hiring-system/services/resume-intake-agent/app/llm.py`
-  - `/Users/isaactan/Projects/agent-based-hiring-system/services/resume-intake-agent/app/agent.py`
-- Qualification screening:
-  - `/Users/isaactan/Projects/agent-based-hiring-system/services/screening-agent/app/llm.py`
-  - `/Users/isaactan/Projects/agent-based-hiring-system/services/screening-agent/app/agent.py`
+- `resume-intake-agent`
+- `screening-agent`
+- `audit-agent`
 
-The model and key are configured through:
+Configuration:
 
 - `OPENAI_API_KEY`
-- `OPENAI_MODEL` (default: `gpt-4o-mini`)
+- `OPENAI_MODEL` with default `gpt-4o-mini`
 
-Health endpoints expose whether model-backed execution is active through `llm_enabled`.
+Health endpoints expose `llm_enabled` for the agents that support model execution.
 
 ## Local Development
 
@@ -102,7 +122,17 @@ Health endpoints expose whether model-backed execution is active through `llm_en
 docker compose -f infra/docker-compose.yml up --build
 ```
 
-### Start the services-only stack
+This starts:
+
+- frontend on `http://localhost:3000`
+- coordinator on `http://localhost:8000`
+- resume intake on `http://localhost:8001`
+- screening on `http://localhost:8002`
+- audit on `http://localhost:8003`
+- ranking on `http://localhost:8004`
+- postgres on `localhost:5432`
+
+### Start the backend-only stack
 
 ```bash
 docker compose -f services/docker-compose.yml up --build
@@ -114,7 +144,7 @@ docker compose -f services/docker-compose.yml up --build
 sh db/migrate.sh infra/docker-compose.yml
 ```
 
-Or for the services-only compose file:
+Or for the backend-only compose file:
 
 ```bash
 sh db/migrate.sh services/docker-compose.yml
@@ -123,16 +153,21 @@ sh db/migrate.sh services/docker-compose.yml
 ### Helpful Make targets
 
 ```bash
-make build-all
 make compose-build-all
+make up
+make down
 make migrate-db
 make migrate-db-services
 ```
 
+## Testing
+
+There are unit tests for the coordinator, resume intake, screening, ranking, and audit services under `services/*/tests`.
+
 ## Current Gaps
 
-- Resume parsing is still basic for uploaded files
-- Proper PDF/DOCX/OCR extraction is not implemented yet
-- Screening fallback scoring needs refinement
-- Bias/audit functionality is still a placeholder
-- Real model-backed end-to-end runs require `OPENAI_API_KEY`
+- `POST /jobs` is a run-triggering endpoint, not a metadata-only "create empty job" endpoint.
+- The frontend still attempts a WebSocket connection at `/ws`, but the coordinator does not currently expose a WebSocket route.
+- The frontend includes a `deleteCandidate` API helper, but there is no matching coordinator delete endpoint yet.
+- Ranking can overwrite candidate recommendation and status after the main workflow completes, but ranking artifacts are not persisted in Postgres.
+- There is no async queue or background worker orchestration yet; the main workflow is synchronous.

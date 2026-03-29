@@ -1,29 +1,39 @@
 # Project Progress Tracker
-**Project:** Agent-Based Hiring System for Scalable & Explainable Resume Screening
+**Project:** Agent-Based Hiring System for Scalable and Explainable Resume Screening
 **Team:** Team 20
-**Module:** GC Architecting AI Systems – Practice
-**Last Updated:** 2026-03-25
+**Module:** GC Architecting AI Systems - Practice
+**Last Updated:** 2026-03-29
 
 ---
 
 ## Overall Status
 
-The project now has a working backend vertical slice:
+The repo now contains a working backend slice with five services:
 
-1. Coordinator accepts job submissions
-2. Resume intake agent parses candidate data
-3. Screening agent scores qualification
-4. Workflow state and artifacts are persisted in Postgres
-5. DB-backed APIs expose jobs, candidates, decisions, stats, uploads, and artifact replay
+1. coordinator
+2. resume intake
+3. screening
+4. audit
+5. ranking
 
-OpenAI model hooks are implemented for resume intake, screening, and audit, but real model-backed execution still depends on configuring `OPENAI_API_KEY`.
+The default persisted workflow is:
+
+- coordinator bootstrap
+- resume intake
+- screening
+- audit
+- candidate persistence and review-state update
+
+Ranking is implemented as a standalone manual step rather than part of the default pipeline.
+
+OpenAI model hooks exist for resume intake, screening, and audit. Real model-backed execution still depends on `OPENAI_API_KEY`.
 
 ---
 
-## Phase 1 – Foundation (COMPLETED ✅)
+## Phase 1 - Foundation (COMPLETED)
 
-### Architecture & Contracts
-- [x] `BaseAgent` contract implemented
+### Architecture and Contracts
+- [x] `BaseAgent` contract implemented across services
 - [x] Standard artifact shape enforced
 - [x] Correlation ID propagated across services
 - [x] Shared memory replay implemented at agent-service level
@@ -33,39 +43,47 @@ OpenAI model hooks are implemented for resume intake, screening, and audit, but 
 - [x] Coordinator dispatches work via HTTP
 - [x] Resume intake runs as an independent service
 - [x] Screening runs as an independent service
-- [x] Health endpoints exposed for all active services
+- [x] Audit runs as an independent service
+- [x] Ranking runs as an independent service
+- [x] Health endpoints exposed for all current services
 
-### Resilience & Observability
-- [x] Retry logic with bounded attempts
+### Resilience and Observability
+- [x] Retry logic with bounded attempts for coordinator agent calls
 - [x] Structured JSON logs
 - [x] Failure events logged with correlation IDs
-- [x] Artifact replay supported through `/jobs/{job_id}/artifacts`
+- [x] Artifact replay supported through `GET /jobs/{job_id}/artifacts`
 
 ---
 
-## Phase 2 – Multi-Agent Vertical Slice (IMPLEMENTED ✅)
+## Phase 2 - Multi-Agent Vertical Slice (IMPLEMENTED)
 
 ### Active Agents
 - [x] Resume Intake Agent
 - [x] Qualification Screening Agent
-- [x] Audit / Compliance Agent service
-- [x] Audit / Compliance Agent integrated into coordinator workflow
+- [x] Audit Agent
+- [x] Ranking Agent
 
 ### Coordinator Workflow
-- [x] `resume-intake -> screening` orchestration
 - [x] `resume-intake -> screening -> audit` orchestration
 - [x] Workflow bootstrap and completion tracking
 - [x] Candidate record creation during processing
-- [x] Artifact persistence for each completed step
-- [ ] Coordinator-level `needs_human_review` rule
-- [ ] Coordinator-level escalation state exposed to frontend
+- [x] Artifact persistence for intake, screening, and audit
+- [x] Coordinator-level human review state derived from screening and audit
+- [x] Review-required state exposed through candidate read APIs
+- [ ] Ranking integrated into the default pipeline
+- [ ] Ranking artifact persisted in Postgres
 
-### Database & Persistence
+### Database and Persistence
 - [x] Postgres migrations added
 - [x] `jobs` table
 - [x] `candidates` table
 - [x] `workflow_runs` table
 - [x] `artifacts` table
+- [x] `jobs.job_requirements` JSONB field
+- [x] `candidates.needs_human_review`
+- [x] `candidates.review_status`
+- [x] `candidates.review_reasons`
+- [x] `candidates.escalation_source`
 - [x] Read/write repository layer implemented
 
 ### Frontend-Facing APIs
@@ -81,64 +99,57 @@ OpenAI model hooks are implemented for resume intake, screening, and audit, but 
 - [x] `POST /candidates/batch-upload`
 - [x] `GET /stats`
 - [x] `GET /agents/status`
-- [x] `GET /audit/bias-check` placeholder route
-- [x] `GET /audit/bias-check` backed by the audit agent
-- [x] `GET /jobs/{job_id}/artifacts` includes audit artifacts from integrated flow
+- [x] `GET /audit/bias-check`
 
-### Testing & Verification
-- [x] Coordinator route tests added
-- [x] Coordinator orchestration tests added
-- [x] Resume intake LLM/fallback tests added
-- [x] Screening LLM/fallback tests added
-- [x] Audit agent LLM/fallback tests added
-- [x] End-to-end smoke test executed through the running service stack
+### Testing Surface
+- [x] Coordinator route tests
+- [x] Coordinator orchestration tests
+- [x] Resume parsing tests for TXT, PDF, and DOCX upload paths
+- [x] Resume intake LLM and fallback tests
+- [x] Screening LLM and fallback tests
+- [x] Audit agent LLM and fallback tests
+- [x] Ranking agent tests
 
 ---
 
-## Phase 3 – Intelligence Refinement (IN PROGRESS 🚧)
+## Phase 3 - Intelligence Refinement (IN PROGRESS)
 
 ### OpenAI-Backed Agent Roles
 - [x] Resume intake model client added
 - [x] Screening model client added
 - [x] Audit model client added
 - [x] `OPENAI_MODEL` configuration added
-- [x] `llm_enabled` health reporting added
+- [x] `llm_enabled` health reporting added where applicable
 - [ ] Real end-to-end run with production API key
 
 ### Quality Gaps
-- [ ] Better PDF/DOCX/OCR parsing
-- [ ] Improved candidate name extraction fallback
-- [ ] Better job-skill extraction for heuristic screening
-- [ ] Confidence scoring calibration
-- [ ] Stronger explanation payloads in frontend detail views
+- [ ] Better candidate/entity extraction heuristics in fallback paths
+- [ ] Better job-skill extraction from free-text descriptions
+- [ ] Confidence calibration across screening and audit
+- [ ] Stronger explanation rendering in the frontend detail views
 
 ---
 
-## Phase 4 – Demo-Critical Work (NEXT)
+## Phase 4 - Demo-Critical Work (NEXT)
 
-- [x] Integrate audit agent into the coordinator workflow
-- [x] Persist audit artifacts in Postgres as part of the main workflow
-- [x] Replace `/audit/bias-check` placeholder logic with audit-agent-backed execution
-- [ ] Add human-in-the-loop escalation flow using screening and audit review flags
-- [ ] Expose review-required state and decision trail clearly in the frontend
-- [ ] Upgrade resume upload parsing for real PDF and DOCX extraction
-- [ ] Run a benchmark and demo-readiness verification pass
+- [ ] Clarify or redesign the frontend job-creation flow so `POST /jobs` is not used as a fake sample-job creator
+- [ ] Decide whether ranking should be manual-only or part of the main workflow
+- [ ] Persist ranking artifacts if ranking remains a first-class step
+- [ ] Add a real backend event stream or remove the frontend WebSocket expectation
+- [ ] Run a demo-readiness verification pass against the composed stack
 
-## Phase 5 – Remaining Demo Work / Nice To Have
+## Phase 5 - Remaining Nice-To-Haves
 
-- [ ] Standalone ranking / recommendation agent
-- [ ] Better skill extraction and candidate name extraction heuristics
-- [ ] Confidence calibration improvements
-- [ ] Auto-trigger job audit after screening completes
-- [ ] Dashboard improvements for stage status, fairness metrics, and agent activity
-- [ ] Async queue/event-driven execution if scale requires it
-- [ ] Delete candidate endpoint and cleanup flows
+- [ ] Add a delete candidate endpoint and cleanup flow
+- [ ] Add async queue or event-driven execution if scale requires it
+- [ ] Expand dashboard support for richer fairness and workflow metrics
+- [ ] Improve heuristic quality for ranking, screening, and resume extraction
 
 ---
 
 ## Notes
 
-- The audit agent is now on the coordinator critical path and its artifacts are persisted through the shared Postgres-backed flow.
-- Screening already emits `needs_human_review` and `review_reasons`, but that state is not yet elevated into a coordinator-level escalation decision.
-- Upload handling still decodes raw bytes in the coordinator route layer, so PDF/DOCX demo reliability remains a real risk until parsing is upgraded.
-- Agent-local shared memory still exists for per-service replay, but the database-backed coordinator flow is the intended system of record for demoable state.
+- PDF and DOCX extraction are now implemented in the coordinator via `pypdf` and `python-docx`.
+- Screening review flags and audit review flags are already combined into coordinator-level candidate review state.
+- The frontend shows review state in list and detail views.
+- The frontend still expects a WebSocket endpoint at `/ws`, but that endpoint does not exist in the current backend.
