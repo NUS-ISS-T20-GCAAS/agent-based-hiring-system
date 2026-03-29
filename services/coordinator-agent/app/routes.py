@@ -7,6 +7,7 @@ import requests
 from app.schemas import JobRequest, JobResponse, Artifact
 from app.coordinator import run_job
 from app.repository import CoordinatorRepository
+from app.resume_parser import ResumeParsingError, extract_resume_text
 
 from app.config import AUDIT_AGENT_URL, RESUME_INTAKE_AGENT_URL, SCREENING_AGENT_URL, REQUEST_TIMEOUT
 from app.logger import get_logger
@@ -91,19 +92,6 @@ def _string_list(value: object) -> list[str]:
     if not isinstance(value, list):
         return []
     return [item for item in value if isinstance(item, str) and item.strip()]
-
-
-def _extract_resume_text(raw: bytes) -> str:
-    if not raw:
-        return ""
-
-    try:
-        decoded = raw.decode("utf-8")
-    except UnicodeDecodeError:
-        decoded = raw.decode("latin-1", errors="ignore")
-
-    normalized = re.sub(r"\s+", " ", decoded).strip()
-    return normalized[:20000]
 
 
 def _job_payload(row: dict) -> dict:
@@ -241,7 +229,11 @@ async def _process_upload_files(
         filename = upload.filename or "resume.txt"
         try:
             content = await upload.read()
-            resume_text = _extract_resume_text(content)
+            resume_text = extract_resume_text(
+                filename=filename,
+                content_type=getattr(upload, "content_type", None),
+                raw=content,
+            )
             request = JobRequest(
                 job_id=job_id,
                 resume_url=f"upload://{filename}",
@@ -254,6 +246,14 @@ async def _process_upload_files(
             )
             job_response = run_job(request)
             results.append(job_response.model_dump())
+        except ResumeParsingError as exc:
+            errors.append(
+                {
+                    "file": filename,
+                    "detail": exc.detail,
+                    "status_code": exc.status_code,
+                }
+            )
         except HTTPException as exc:
             errors.append(
                 {
