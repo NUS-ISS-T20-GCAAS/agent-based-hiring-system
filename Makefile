@@ -1,7 +1,7 @@
-.PHONY: build-all build-frontend build-coordinator build-resume build-screening up down migrate-db migrate-db-services
+.PHONY: build-all build-frontend build-coordinator build-resume build-screening build-ranking up down migrate-db migrate-db-services
 
 # Build all services individually
-build-all: build-frontend build-coordinator build-resume build-screening
+build-all: build-frontend build-coordinator build-resume build-screening build-ranking
 
 build-frontend:
 	cd frontend && docker build -t frontend .
@@ -14,6 +14,9 @@ build-resume:
 
 build-screening:
 	cd services/screening-agent && docker build -t screening-agent .
+
+build-ranking:
+	cd services/ranking-agent && docker build -t ranking-agent .
 
 # Using docker-compose
 compose-build-all:
@@ -30,6 +33,9 @@ compose-build-resume:
 
 compose-build-screening:
 	docker-compose -f infra/docker-compose.yml build screening-agent
+
+compose-build-ranking:
+	docker-compose -f infra/docker-compose.yml build ranking-agent
 
 # Run services
 up:

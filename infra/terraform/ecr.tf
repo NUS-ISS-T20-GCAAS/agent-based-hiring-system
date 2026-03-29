@@ -8,6 +8,7 @@ locals {
     "coordinator-agent",
     "resume-intake-agent",
     "screening-agent",
+    "ranking-agent",
     "audit-agent"
   ]
 }

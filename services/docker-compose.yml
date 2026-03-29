@@ -25,6 +25,16 @@ services:
       timeout: 2s
       retries: 5
 
+  ranking-agent:
+    build: ./ranking-agent
+    ports:
+      - "8004:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 60s
+      timeout: 2s
+      retries: 5
+
   audit-agent:
     build: ./audit-agent
     ports:

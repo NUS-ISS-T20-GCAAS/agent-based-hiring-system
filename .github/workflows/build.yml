@@ -21,6 +21,7 @@ on:
           - coordinator-agent
           - resume-intake-agent
           - screening-agent
+          - ranking-agent
           - audit-agent
         required: true
         default: 'all'
@@ -49,6 +50,8 @@ jobs:
               - services/resume-intake-agent/**
             screening-agent:
               - services/screening-agent/**
+            ranking-agent:
+              - services/ranking-agent/**
             audit-agent:
               - services/audit-agent/**
 
@@ -68,7 +71,7 @@ jobs:
           if [ -n "$SERVICES" ]; then
             # Handle the "all" option explicitly
             if [ "$SERVICES" = "all" ]; then
-              SERVICES="coordinator-agent,resume-intake-agent,screening-agent,audit-agent"
+              SERVICES="coordinator-agent,resume-intake-agent,screening-agent,ranking-agent,audit-agent"
             fi
             
             # Format the output for the matrix array
