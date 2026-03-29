@@ -93,7 +93,7 @@ jobs:
 
           if [ -z "$EKS_CLUSTER" ]; then
             echo "⚠️ No EKS cluster found in state. Using 'latest' as fallback."
-            echo '{"frontend":"latest","coordinator-agent":"latest","resume-intake-agent":"latest","screening-agent":"latest"}' > image-tags.json
+            echo '{"frontend":"latest","coordinator-agent":"latest","resume-intake-agent":"latest","screening-agent":"latest","audit-agent":"latest","ranking-agent":"latest"}' > image-tags.json
           else
             aws eks update-kubeconfig --name "$EKS_CLUSTER" --region ${{ env.AWS_REGION }}
 
@@ -169,7 +169,9 @@ jobs:
             -target=aws_launch_template.eks_nodes \
             -target=aws_eks_fargate_profile.services \
             -target=aws_eks_fargate_profile.kube_system \
+            -target=aws_iam_openid_connect_provider.eks \
             -target=aws_eks_cluster.main \
+            -target=aws_route.private_nat \
             -target=aws_nat_gateway.main \
             -target=aws_eip.nat
 

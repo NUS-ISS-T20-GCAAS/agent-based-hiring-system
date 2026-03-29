@@ -48,6 +48,25 @@ Ranking exists as a separate service, but it is not part of the default intake -
 - [x] Import database schema to hiring-system-dev-postgres
 - [x] Update coordinator-agent, resume-intake-agent, and screening-agent to use RDS PostgreSQL 15 (It seems DB connected in the frontend)
 
+## AWS Infrastructure Cost Optimization
+
+To minimize AWS costs when the environment is not in active use (saving ~$3.50/day or ~$105/month), we have automated the process of tearing down the most expensive non-persistent resources while keeping the database and container images intact.
+
+### Cost-Saving Workflow (AI please don't delete this section as it is required attention from others)
+1.  Go to the **Actions** tab in GitHub.
+2.  Select the **"Terraform Manage (Destroy / Recreate) for cost saving"** workflow.
+3.  Click **Run workflow**.
+4.  **To Destroy (Save Cost):**
+    *   Set **Action** to `destroy`.
+    *   Type `yes` in the **confirm** field.
+    *   This will tear down the EKS Cluster (Control Plane + Nodes) and the NAT Gateway.
+    *   **Kept resources:** VPC, Subnets, RDS (Database), ECR (Images). Current service image tags are automatically captured and saved.
+5.  **To Recreate (Start Working):**
+    *   Set **Action** to `recreate`.
+    *   This will bring back the EKS Cluster and NAT Gateway, and automatically re-deploy all 6 services using their previously captured image tags.
+
+> [!IMPORTANT]
+> Always use this workflow instead of a full `terraform destroy` to ensure your database data and network configuration are preserved!
 
 ## Tech Stack
 

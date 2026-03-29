@@ -12,7 +12,7 @@ infra/terraform/
 ├── variables.tf             # All input variables with defaults
 ├── terraform.tfvars.example # Example values (copy to terraform.tfvars)
 ├── vpc.tf                   # VPC, subnets, IGW, NAT Gateway, routes
-├── ecr.tf                   # ECR repos (4) with scan-on-push & lifecycle
+├── ecr.tf                   # ECR repos (6) with scan-on-push & lifecycle
 ├── eks.tf                   # EKS cluster (K8s 1.32) + managed node group
 ├── eks-fargate.tf           # Fargate profiles (services + kube-system)
 ├── rds.tf                   # RDS PostgreSQL 15
@@ -24,10 +24,17 @@ infra/terraform/
     ├── coordinator-agent-deployment.yaml    # Fargate, HPA 1→5
     ├── resume-intake-agent-deployment.yaml  # Fargate, HPA 1→5
     ├── screening-agent-deployment.yaml      # Fargate, HPA 1→5
+    ├── audit-agent-deployment.yaml          # Fargate, HPA 1→5
+    ├── ranking-agent-deployment.yaml        # Fargate, HPA 1→5
     └── secrets.yaml.example                 # Template for credentials
 
 .github/workflows/
-└── terraform.yml            # CI/CD pipeline (manual dispatch)
+├── terraform.yml            # TF Plan/Apply & K8s Deploy (Push/Manual dispatch)
+├── terraform-manage.yml     # Cost optimization targeted destroy/recreate (Manual)
+├── deploy-db.yml            # SQL schema & migrations (automatic upon push to db/)
+├── deploy-services.yml      # CI/CD for Python Agents to ECR & K8s
+├── deploy-frontend.yml      # CI/CD for Frontend React app to ECR & K8s
+└── build.yml                # Core reusable build & tests pipeline
 ```
 
 ---
@@ -324,14 +331,21 @@ kubectl get hpa -n services         # HPA autoscalers
 
 ### Step 8 — Initialize Database Schema
 
+**Option A (Automated — Recommended)**
+Push any changes to `db/` or manually trigger the **"Deploy Database Changes"** GitHub Action. It automatically:
+1. Installs the PostgreSQL client.
+2. Resolves the live RDS endpoint via Terraform outputs.
+3. Runs `db/init_db.sql`.
+4. Applies all migrations in `db/migrations/*.sql`.
+
+**Option B (Manual)**
 ```bash
 # Get RDS endpoint from terraform output
-terraform output rds_endpoint
+terraform output rds_hostname
 
 # Connect and run init_db.sql (from a pod or bastion)
 kubectl run db-init --rm -it --image=postgres:15 -n services -- \
-  psql "postgresql://dbadmin:YOUR_PASSWORD@hiring-system-dev-postgres.c9essouqsmqs.ap-southeast-1.rds.amazonaws.com:5432/hiring_system" \
-  -f /dev/stdin < ../../db/init_db.sql
+  psql -h <RDS_HOSTNAME> -U dbadmin -d hiring_system -f /dev/stdin < ../../db/init_db.sql
 ```
 
 ---

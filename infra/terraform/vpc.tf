@@ -94,14 +94,17 @@ resource "aws_route_table" "public" {
 resource "aws_route_table" "private" {
   vpc_id = aws_vpc.main.id
 
-  route {
-    cidr_block     = "0.0.0.0/0"
-    nat_gateway_id = aws_nat_gateway.main.id
-  }
-
   tags = {
     Name = "${local.cluster_name}-private-rt"
   }
+}
+
+# Standalone route so it can be destroyed/recreated independently
+# of the route table (used by terraform-manage.yml cost-saving workflow)
+resource "aws_route" "private_nat" {
+  route_table_id         = aws_route_table.private.id
+  destination_cidr_block = "0.0.0.0/0"
+  nat_gateway_id         = aws_nat_gateway.main.id
 }
 
 # ── Route Table Associations ──────────────────

@@ -1,5 +1,14 @@
 ```text
 /Users/isaactan/Projects/agent-based-hiring-system
+├── .github
+│   └── workflows
+│       ├── build.yml
+│       ├── deploy-db.yml
+│       ├── deploy-frontend.yml
+│       ├── deploy-services.yml
+│       ├── frontend-build.yml
+│       ├── terraform-manage.yml
+│       └── terraform.yml
 ├── Makefile
 ├── README.md
 ├── SYSTEM_WORKFLOW.md
@@ -41,6 +50,13 @@
 │       ├── eks.tf
 │       ├── iam.tf
 │       ├── k8s
+│       │   ├── audit-agent-deployment.yaml
+│       │   ├── coordinator-agent-deployment.yaml
+│       │   ├── frontend-deployment.yaml
+│       │   ├── namespaces.yaml
+│       │   ├── ranking-agent-deployment.yaml
+│       │   ├── resume-intake-agent-deployment.yaml
+│       │   ├── screening-agent-deployment.yaml
 │       │   └── secrets.yaml.example
 │       ├── outputs.tf
 │       ├── rds.tf
