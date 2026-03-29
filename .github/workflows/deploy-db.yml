@@ -18,11 +18,16 @@ on:
           - staging
           - prod
 
+env:
+  TF_DIR: infra/terraform
+  TF_VERSION: "1.12.2"
+  AWS_REGION: "ap-southeast-1"
+
 jobs:
   deploy-sql:
     runs-on: ubuntu-latest
     environment: ${{ github.event.inputs.environment || 'dev' }}
-    
+
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -32,24 +37,45 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y postgresql-client
 
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Get RDS Hostname from Terraform
+        id: tf-outputs
+        run: |
+          terraform init
+          RDS_HOST=$(terraform output -raw rds_hostname)
+          echo "rds_host=$RDS_HOST" >> "$GITHUB_OUTPUT"
+          echo "Resolved RDS host: $RDS_HOST"
+        working-directory: ${{ env.TF_DIR }}
+        env:
+          TF_VAR_db_password: ${{ secrets.TF_VAR_DB_PASSWORD }}
+
       - name: Run Database Initialization & Migrations
         env:
-          PGHOST: ${{ secrets.DB_HOST }}
-          PGPORT: ${{ secrets.DB_PORT }}
-          PGUSER: ${{ secrets.DB_USER }}
-          PGPASSWORD: ${{ secrets.DB_PASSWORD }}
-          PGDATABASE: ${{ secrets.DB_NAME }}
+          PGHOST: ${{ steps.tf-outputs.outputs.rds_host }}
+          PGPORT: "5432"
+          PGUSER: ${{ secrets.TF_VAR_DB_USERNAME || 'dbadmin' }}
+          PGPASSWORD: ${{ secrets.TF_VAR_DB_PASSWORD }}
+          PGDATABASE: "hiring_system"
         run: |
-          echo "Deploying SQL scripts to $PGDATABASE on $PGHOST..."
-          
-          # Set the PGPASSWORD environment variable so psql uses it automatically
-          export PGPASSWORD=$PGPASSWORD
-          
+          echo "Deploying SQL scripts to $PGDATABASE on $PGHOST:$PGPORT..."
+
           # Run the main initialization script
           echo "Applying init_db.sql..."
           psql -v ON_ERROR_STOP=1 -f db/init_db.sql
-          
-          # Optionally run any migration scripts found in db/migrations/
+
+          # Run any migration scripts found in db/migrations/
           if [ -d "db/migrations" ]; then
             for file in db/migrations/*.sql; do
               if [ -f "$file" ]; then
