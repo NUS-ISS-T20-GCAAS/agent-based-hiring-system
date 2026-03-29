@@ -1,0 +1,426 @@
+name: "Terraform Manage (Destroy / Recreate) for cost saving"
+
+# ────────────────────────────────────────────────
+# Manual-only workflow to destroy or recreate the
+# EKS cluster and related expensive resources.
+#
+# DESTROY targets (saves ~$3.50/day):
+#   - EKS Cluster control plane ($2.40/day)
+#   - EKS Node Group (EC2 instances)
+#   - EKS Fargate Profiles
+#   - NAT Gateway ($1.08/day)
+#   - Elastic IP
+#
+# KEPT (cheap / persistent):
+#   - VPC, Subnets, Internet Gateway, Route Tables
+#   - RDS PostgreSQL (database & data preserved)
+#   - ECR Repositories (container images preserved)
+#   - IAM Roles & Policies
+#   - Security Groups
+# ────────────────────────────────────────────────
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Action to perform"
+        required: true
+        type: choice
+        options:
+          - destroy
+          - recreate
+      environment:
+        description: "Target environment"
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+        default: dev
+      confirm:
+        description: "Type 'yes' to confirm destroy"
+        required: false
+        type: string
+        default: ""
+
+env:
+  TF_DIR: infra/terraform
+  TF_VERSION: "1.12.2"
+  AWS_REGION: "ap-southeast-1"
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  # ════════════════════════════════════════════════
+  #  DESTROY — Tear down all Terraform resources
+  # ════════════════════════════════════════════════
+  destroy:
+    name: "🔴 Destroy Infrastructure"
+    if: github.event.inputs.action == 'destroy' && github.event.inputs.confirm == 'yes'
+    runs-on: ubuntu-latest
+    env:
+      TF_VAR_db_password: ${{ secrets.TF_VAR_DB_PASSWORD }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Terraform Init
+        run: terraform init
+        working-directory: ${{ env.TF_DIR }}
+
+      - name: Capture Current Image Tags
+        run: |
+          echo "📸 Capturing currently deployed image tags before destroy..."
+
+          # Get EKS cluster name from Terraform state
+          EKS_CLUSTER=$(terraform output -raw eks_cluster_name 2>/dev/null || echo "")
+
+          if [ -z "$EKS_CLUSTER" ]; then
+            echo "⚠️ No EKS cluster found in state. Using 'latest' as fallback."
+            echo '{"frontend":"latest","coordinator-agent":"latest","resume-intake-agent":"latest","screening-agent":"latest"}' > image-tags.json
+          else
+            aws eks update-kubeconfig --name "$EKS_CLUSTER" --region ${{ env.AWS_REGION }}
+
+            # Extract image tag from each deployment (fallback to 'latest' if not found)
+            FE_TAG=$(kubectl get deployment frontend -n frontend -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null | awk -F: '{print $NF}' || echo "latest")
+            COORD_TAG=$(kubectl get deployment coordinator-agent -n services -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null | awk -F: '{print $NF}' || echo "latest")
+            RESUME_TAG=$(kubectl get deployment resume-intake-agent -n services -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null | awk -F: '{print $NF}' || echo "latest")
+            SCREEN_TAG=$(kubectl get deployment screening-agent -n services -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null | awk -F: '{print $NF}' || echo "latest")
+            AUDIT_TAG=$(kubectl get deployment audit-agent -n services -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null | awk -F: '{print $NF}' || echo "latest")
+            RANKING_TAG=$(kubectl get deployment ranking-agent -n services -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null | awk -F: '{print $NF}' || echo "latest")
+
+            # Default empty values to 'latest'
+            FE_TAG=${FE_TAG:-latest}
+            COORD_TAG=${COORD_TAG:-latest}
+            RESUME_TAG=${RESUME_TAG:-latest}
+            SCREEN_TAG=${SCREEN_TAG:-latest}
+            AUDIT_TAG=${AUDIT_TAG:-latest}
+            RANKING_TAG=${RANKING_TAG:-latest}
+
+            echo "  frontend:            $FE_TAG"
+            echo "  coordinator-agent:   $COORD_TAG"
+            echo "  resume-intake-agent: $RESUME_TAG"
+            echo "  screening-agent:     $SCREEN_TAG"
+            echo "  audit-agent:         $AUDIT_TAG"
+            echo "  ranking-agent:       $RANKING_TAG"
+
+            cat > image-tags.json <<EOF
+          {"frontend":"$FE_TAG","coordinator-agent":"$COORD_TAG","resume-intake-agent":"$RESUME_TAG","screening-agent":"$SCREEN_TAG","audit-agent":"$AUDIT_TAG","ranking-agent":"$RANKING_TAG"}
+          EOF
+          fi
+
+          echo ""
+          echo "Saved image-tags.json:"
+          cat image-tags.json
+        working-directory: ${{ env.TF_DIR }}
+
+      - name: Upload Image Tags Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: image-tags-${{ github.event.inputs.environment }}
+          path: ${{ env.TF_DIR }}/image-tags.json
+          retention-days: 90
+
+      - name: Terraform Targeted Destroy
+        run: |
+          echo "🔴 Destroying ONLY expensive resources for environment: ${{ github.event.inputs.environment }}"
+          echo ""
+          echo "Resources being destroyed:"
+          echo "  ├── EKS Cluster (control plane = \$2.40/day)"
+          echo "  ├── EKS Node Group (EC2 instances)"
+          echo "  ├── EKS Fargate Profiles"
+          echo "  ├── EKS Access Entries & Policies"
+          echo "  ├── Launch Template"
+          echo "  ├── NAT Gateway (\$0.045/hr)"
+          echo "  └── Elastic IP"
+          echo ""
+          echo "Resources being KEPT:"
+          echo "  ├── VPC & Subnets"
+          echo "  ├── Internet Gateway & Route Tables"
+          echo "  ├── ECR Repositories (images preserved)"
+          echo "  ├── RDS PostgreSQL (database preserved)"
+          echo "  ├── IAM Roles & Policies"
+          echo "  └── Security Groups"
+          echo ""
+
+          terraform destroy -auto-approve \
+            -var="environment=${{ github.event.inputs.environment }}" \
+            -target=aws_eks_access_policy_association.root_admin \
+            -target=aws_eks_access_policy_association.all_users_admin \
+            -target=aws_eks_access_entry.root \
+            -target=aws_eks_access_entry.all_users \
+            -target=aws_eks_node_group.general \
+            -target=aws_launch_template.eks_nodes \
+            -target=aws_eks_fargate_profile.services \
+            -target=aws_eks_fargate_profile.kube_system \
+            -target=aws_eks_cluster.main \
+            -target=aws_nat_gateway.main \
+            -target=aws_eip.nat
+
+          echo ""
+          echo "✅ Expensive resources destroyed successfully!"
+          echo "   Saved: ~\$3.50/day (EKS control plane + NAT + EIP)"
+          echo "   Kept:  VPC, Subnets, RDS, ECR, IAM roles"
+          echo "   Use the 'recreate' action to bring everything back."
+        working-directory: ${{ env.TF_DIR }}
+
+  destroy-guard:
+    name: "⚠️ Destroy Rejected (confirm not set)"
+    if: github.event.inputs.action == 'destroy' && github.event.inputs.confirm != 'yes'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Rejected
+        run: |
+          echo "⚠️ Destroy action was triggered but 'confirm' input was not set to 'yes'."
+          echo "   Re-run the workflow and type 'yes' in the confirm field to proceed."
+          exit 1
+
+  # ════════════════════════════════════════════════
+  #  RECREATE — Apply all Terraform + Deploy K8s
+  # ════════════════════════════════════════════════
+  recreate-apply:
+    name: "🟢 Recreate — Terraform Apply"
+    if: github.event.inputs.action == 'recreate'
+    runs-on: ubuntu-latest
+    env:
+      TF_VAR_db_password: ${{ secrets.TF_VAR_DB_PASSWORD }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Terraform Init
+        run: terraform init
+        working-directory: ${{ env.TF_DIR }}
+
+      - name: Terraform Plan
+        run: |
+          echo "🟢 Planning RECREATE for environment: ${{ github.event.inputs.environment }}"
+          terraform plan \
+            -var="environment=${{ github.event.inputs.environment }}" \
+            -no-color \
+            -out=tfplan \
+            2>&1 | tee plan_output.txt
+        working-directory: ${{ env.TF_DIR }}
+
+      - name: Terraform Apply
+        run: |
+          echo "🟢 Applying infrastructure..."
+          terraform apply -auto-approve tfplan
+        working-directory: ${{ env.TF_DIR }}
+
+      - name: Output Results
+        run: terraform output -no-color
+        working-directory: ${{ env.TF_DIR }}
+
+  recreate-k8s:
+    name: "🟢 Recreate — Deploy K8s"
+    needs: recreate-apply
+    runs-on: ubuntu-latest
+    env:
+      TF_VAR_db_password: ${{ secrets.TF_VAR_DB_PASSWORD }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Terraform Init
+        run: terraform init
+        working-directory: ${{ env.TF_DIR }}
+
+      - name: Get AWS Account ID
+        id: aws-info
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          echo "account_id=$ACCOUNT_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Get Terraform Outputs
+        id: tf-outputs
+        run: |
+          EKS_CLUSTER=$(terraform output -raw eks_cluster_name)
+          RDS_HOST=$(terraform output -raw rds_hostname)
+          echo "eks_cluster=$EKS_CLUSTER" >> "$GITHUB_OUTPUT"
+          echo "rds_host=$RDS_HOST" >> "$GITHUB_OUTPUT"
+        working-directory: ${{ env.TF_DIR }}
+
+      - name: Configure kubectl
+        run: |
+          aws eks update-kubeconfig \
+            --name ${{ steps.tf-outputs.outputs.eks_cluster }} \
+            --region ${{ env.AWS_REGION }}
+
+      - name: Wait for Nodes to be Ready
+        run: |
+          echo "⏳ Waiting for EKS nodes to become Ready (up to 5 minutes)..."
+          for i in $(seq 1 30); do
+            READY=$(kubectl get nodes --no-headers 2>/dev/null | grep -c " Ready " || true)
+            if [ "$READY" -ge 1 ]; then
+              echo "✅ $READY node(s) ready!"
+              kubectl get nodes
+              break
+            fi
+            echo "  Attempt $i/30 — no ready nodes yet, waiting 10s..."
+            sleep 10
+          done
+
+      - name: Download Saved Image Tags
+        id: download-tags
+        uses: actions/download-artifact@v4
+        with:
+          name: image-tags-${{ github.event.inputs.environment }}
+          path: ${{ env.TF_DIR }}
+        continue-on-error: true
+
+      - name: Load Image Tags
+        id: image-tags
+        run: |
+          if [ -f "${{ env.TF_DIR }}/image-tags.json" ]; then
+            echo "📦 Found saved image tags from previous destroy:"
+            cat ${{ env.TF_DIR }}/image-tags.json
+            FE_TAG=$(cat ${{ env.TF_DIR }}/image-tags.json | python3 -c "import sys,json; print(json.load(sys.stdin)['frontend'])")
+            COORD_TAG=$(cat ${{ env.TF_DIR }}/image-tags.json | python3 -c "import sys,json; print(json.load(sys.stdin)['coordinator-agent'])")
+            RESUME_TAG=$(cat ${{ env.TF_DIR }}/image-tags.json | python3 -c "import sys,json; print(json.load(sys.stdin)['resume-intake-agent'])")
+            SCREEN_TAG=$(cat ${{ env.TF_DIR }}/image-tags.json | python3 -c "import sys,json; print(json.load(sys.stdin)['screening-agent'])")
+            AUDIT_TAG=$(cat ${{ env.TF_DIR }}/image-tags.json | python3 -c "import sys,json; print(json.load(sys.stdin).get('audit-agent', 'latest'))")
+            RANKING_TAG=$(cat ${{ env.TF_DIR }}/image-tags.json | python3 -c "import sys,json; print(json.load(sys.stdin).get('ranking-agent', 'latest'))")
+          else
+            echo "⚠️ No saved image tags found. Using 'latest' as fallback."
+            FE_TAG="latest"
+            COORD_TAG="latest"
+            RESUME_TAG="latest"
+            SCREEN_TAG="latest"
+            AUDIT_TAG="latest"
+            RANKING_TAG="latest"
+          fi
+          echo "frontend_tag=$FE_TAG" >> "$GITHUB_OUTPUT"
+          echo "coordinator_tag=$COORD_TAG" >> "$GITHUB_OUTPUT"
+          echo "resume_tag=$RESUME_TAG" >> "$GITHUB_OUTPUT"
+          echo "screening_tag=$SCREEN_TAG" >> "$GITHUB_OUTPUT"
+          echo "audit_tag=$AUDIT_TAG" >> "$GITHUB_OUTPUT"
+          echo "ranking_tag=$RANKING_TAG" >> "$GITHUB_OUTPUT"
+          echo ""
+          echo "Image tags to deploy:"
+          echo "  frontend:            $FE_TAG"
+          echo "  coordinator-agent:   $COORD_TAG"
+          echo "  resume-intake-agent: $RESUME_TAG"
+          echo "  screening-agent:     $SCREEN_TAG"
+          echo "  audit-agent:         $AUDIT_TAG"
+          echo "  ranking-agent:       $RANKING_TAG"
+
+      - name: Replace Placeholders in K8s Manifests
+        run: |
+          ACCOUNT_ID="${{ steps.aws-info.outputs.account_id }}"
+          REGION="${{ env.AWS_REGION }}"
+
+          # Replace account and region in all deployment files
+          for file in ${{ env.TF_DIR }}/k8s/*-deployment.yaml; do
+            sed -i "s/<ACCOUNT_ID>/$ACCOUNT_ID/g" "$file"
+            sed -i "s/<REGION>/$REGION/g" "$file"
+            echo "Updated: $file"
+          done
+
+          # Replace <IMAGE_TAG> with service-specific tags
+          sed -i "s/<IMAGE_TAG>/${{ steps.image-tags.outputs.frontend_tag }}/g" ${{ env.TF_DIR }}/k8s/frontend-deployment.yaml
+          sed -i "s/<IMAGE_TAG>/${{ steps.image-tags.outputs.coordinator_tag }}/g" ${{ env.TF_DIR }}/k8s/coordinator-agent-deployment.yaml
+          sed -i "s/<IMAGE_TAG>/${{ steps.image-tags.outputs.resume_tag }}/g" ${{ env.TF_DIR }}/k8s/resume-intake-agent-deployment.yaml
+          sed -i "s/<IMAGE_TAG>/${{ steps.image-tags.outputs.screening_tag }}/g" ${{ env.TF_DIR }}/k8s/screening-agent-deployment.yaml
+          sed -i "s/<IMAGE_TAG>/${{ steps.image-tags.outputs.audit_tag }}/g" ${{ env.TF_DIR }}/k8s/audit-agent-deployment.yaml 2>/dev/null || true
+          sed -i "s/<IMAGE_TAG>/${{ steps.image-tags.outputs.ranking_tag }}/g" ${{ env.TF_DIR }}/k8s/ranking-agent-deployment.yaml 2>/dev/null || true
+
+          echo ""
+          echo "Final image references:"
+          grep -h "image:" ${{ env.TF_DIR }}/k8s/*-deployment.yaml || true
+
+      - name: Generate K8s Secrets
+        run: |
+          RDS_HOST="${{ steps.tf-outputs.outputs.rds_host }}"
+          DB_USER="${{ secrets.TF_VAR_DB_USERNAME || 'dbadmin' }}"
+          DB_PASS="${{ secrets.TF_VAR_DB_PASSWORD }}"
+          OPENAI_KEY="${{ secrets.OPENAI_API_KEY }}"
+
+          cat > ${{ env.TF_DIR }}/k8s/secrets.yaml <<EOF
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: hiring-system-secrets
+            namespace: services
+          type: Opaque
+          data:
+            openai-api-key: $(echo -n "$OPENAI_KEY" | base64 -w0)
+            db-host: $(echo -n "$RDS_HOST" | base64 -w0)
+            db-username: $(echo -n "$DB_USER" | base64 -w0)
+            db-password: $(echo -n "$DB_PASS" | base64 -w0)
+          EOF
+
+      - name: Apply K8s Manifests
+        run: |
+          echo "=== Applying Namespaces ==="
+          kubectl apply -f ${{ env.TF_DIR }}/k8s/namespaces.yaml
+
+          echo "=== Applying Secrets ==="
+          kubectl apply -f ${{ env.TF_DIR }}/k8s/secrets.yaml
+
+          echo "=== Applying Deployments ==="
+          kubectl apply -f ${{ env.TF_DIR }}/k8s/frontend-deployment.yaml
+          kubectl apply -f ${{ env.TF_DIR }}/k8s/coordinator-agent-deployment.yaml
+          kubectl apply -f ${{ env.TF_DIR }}/k8s/resume-intake-agent-deployment.yaml
+          kubectl apply -f ${{ env.TF_DIR }}/k8s/screening-agent-deployment.yaml
+          kubectl apply -f ${{ env.TF_DIR }}/k8s/audit-agent-deployment.yaml 2>/dev/null || true
+          kubectl apply -f ${{ env.TF_DIR }}/k8s/ranking-agent-deployment.yaml 2>/dev/null || true
+
+      - name: Verify Deployment
+        run: |
+          echo "=== Frontend Pods ==="
+          kubectl get pods -n frontend
+          echo ""
+          echo "=== Service Pods ==="
+          kubectl get pods -n services
+          echo ""
+          echo "=== Frontend Service (LoadBalancer URL) ==="
+          kubectl get svc -n frontend
+          echo ""
+          echo "=== HPAs ==="
+          kubectl get hpa -n services
+          echo ""
+          echo "✅ Cluster recreated and all workloads deployed!"
+          echo "   Note: LoadBalancer URL may take 2-3 minutes to become active."

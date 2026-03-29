@@ -181,26 +181,47 @@ jobs:
           ACCOUNT_ID="${{ steps.aws-info.outputs.account_id }}"
           REGION="${{ env.AWS_REGION }}"
 
-          # Gracefully fetch the exact image tag already running in Kubernetes
-          CURRENT_TAG=$(kubectl get deployment frontend -n frontend -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null | awk -F: '{print $NF}')
-          
-          if [ -z "$CURRENT_TAG" ]; then
-            CURRENT_TAG="latest"
-            echo "No existing frontend deployment found. Using fallback tag: $CURRENT_TAG"
-          else
-            echo "Found live EKS frontend tag: $CURRENT_TAG"
-          fi
+          # Fetch the exact image tag from each live deployment (fallback to 'latest')
+          FE_TAG=$(kubectl get deployment frontend -n frontend -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null | awk -F: '{print $NF}')
+          COORD_TAG=$(kubectl get deployment coordinator-agent -n services -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null | awk -F: '{print $NF}')
+          RESUME_TAG=$(kubectl get deployment resume-intake-agent -n services -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null | awk -F: '{print $NF}')
+          SCREEN_TAG=$(kubectl get deployment screening-agent -n services -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null | awk -F: '{print $NF}')
+          AUDIT_TAG=$(kubectl get deployment audit-agent -n services -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null | awk -F: '{print $NF}')
+          RANKING_TAG=$(kubectl get deployment ranking-agent -n services -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null | awk -F: '{print $NF}')
 
-          echo "Replacing <ACCOUNT_ID> with $ACCOUNT_ID"
-          echo "Replacing <REGION> with $REGION"
-          echo "Replacing <IMAGE_TAG> with $CURRENT_TAG"
+          FE_TAG=${FE_TAG:-latest}
+          COORD_TAG=${COORD_TAG:-latest}
+          RESUME_TAG=${RESUME_TAG:-latest}
+          SCREEN_TAG=${SCREEN_TAG:-latest}
+          AUDIT_TAG=${AUDIT_TAG:-latest}
+          RANKING_TAG=${RANKING_TAG:-latest}
 
+          echo "Image tags:"
+          echo "  frontend:            $FE_TAG"
+          echo "  coordinator-agent:   $COORD_TAG"
+          echo "  resume-intake-agent: $RESUME_TAG"
+          echo "  screening-agent:     $SCREEN_TAG"
+          echo "  audit-agent:         $AUDIT_TAG"
+          echo "  ranking-agent:       $RANKING_TAG"
+
+          # Replace account and region in all deployment files
           for file in ${{ env.TF_DIR }}/k8s/*-deployment.yaml; do
             sed -i "s/<ACCOUNT_ID>/$ACCOUNT_ID/g" "$file"
             sed -i "s/<REGION>/$REGION/g" "$file"
-            sed -i "s/<IMAGE_TAG>/$CURRENT_TAG/g" "$file"
             echo "Updated: $file"
           done
+
+          # Replace <IMAGE_TAG> with each service's specific tag
+          sed -i "s/<IMAGE_TAG>/$FE_TAG/g" ${{ env.TF_DIR }}/k8s/frontend-deployment.yaml
+          sed -i "s/<IMAGE_TAG>/$COORD_TAG/g" ${{ env.TF_DIR }}/k8s/coordinator-agent-deployment.yaml
+          sed -i "s/<IMAGE_TAG>/$RESUME_TAG/g" ${{ env.TF_DIR }}/k8s/resume-intake-agent-deployment.yaml
+          sed -i "s/<IMAGE_TAG>/$SCREEN_TAG/g" ${{ env.TF_DIR }}/k8s/screening-agent-deployment.yaml
+          sed -i "s/<IMAGE_TAG>/$AUDIT_TAG/g" ${{ env.TF_DIR }}/k8s/audit-agent-deployment.yaml 2>/dev/null || true
+          sed -i "s/<IMAGE_TAG>/$RANKING_TAG/g" ${{ env.TF_DIR }}/k8s/ranking-agent-deployment.yaml 2>/dev/null || true
+
+          echo ""
+          echo "Final image references:"
+          grep -h "image:" ${{ env.TF_DIR }}/k8s/*-deployment.yaml || true
 
       - name: Generate K8s Secrets
         run: |
@@ -236,6 +257,8 @@ jobs:
           kubectl apply -f ${{ env.TF_DIR }}/k8s/coordinator-agent-deployment.yaml
           kubectl apply -f ${{ env.TF_DIR }}/k8s/resume-intake-agent-deployment.yaml
           kubectl apply -f ${{ env.TF_DIR }}/k8s/screening-agent-deployment.yaml
+          kubectl apply -f ${{ env.TF_DIR }}/k8s/audit-agent-deployment.yaml 2>/dev/null || true
+          kubectl apply -f ${{ env.TF_DIR }}/k8s/ranking-agent-deployment.yaml 2>/dev/null || true
 
       - name: Verify Deployment
         run: |
