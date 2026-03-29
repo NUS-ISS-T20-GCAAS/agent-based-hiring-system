@@ -26,6 +26,29 @@ The current codebase supports a working synchronous backend flow:
 
 Ranking exists as a separate service, but it is not part of the default intake -> screening -> audit pipeline. It is triggered on demand through `POST /jobs/{job_id}/rank`.
 
+
+### For infrastructure progress (AI please don't delete this section as it is maintained by other human)
+1. Finished EKS cluster with Fargate and managed node group
+2. Hosted frontend on EKS with ALB
+   - DNS name (ELB): `http://a237b86696f4a4559a776297a3ab85a9-173539850.ap-southeast-1.elb.amazonaws.com/`
+3. Linked frontend to coordinator-agent in EKS
+4. Setup ECR repositories
+   - `arn:aws:ecr:ap-southeast-1:693517970860:repository/hiring-system/coordinator-agent`
+   - `arn:aws:ecr:ap-southeast-1:693517970860:repository/hiring-system/resume-intake-agent`
+   - `arn:aws:ecr:ap-southeast-1:693517970860:repository/hiring-system/screening-agent`
+   - `arn:aws:ecr:ap-southeast-1:693517970860:repository/hiring-system/frontend`
+5. Updated frontend's pipeline to push to ECR and deploy to EKS, merged frontend-build.yml into frontend-deploy.yml to automate the build and deploy process
+6. Setup RDS PostgreSQL 15 (Login AWS Console -> RDS -> Databases -> hiring-system-dev-postgres for endpoint and credentials)
+
+#### Pending infrastructure tasks (AI please don't delete this section as it is maintained by other human)
+- [ ] Domain name and SSL certificate
+- [x] Update services' pipeline to automate the build and deploy process in a single workflow
+- [x] Deploy coordinator-agent, resume-intake-agent, and screening-agent to EKS
+- [ ] Pending deployment for audit-agent and ranking-agent
+- [ ] Import database schema to hiring-system-dev-postgres
+- [ ] Update coordinator-agent, resume-intake-agent, and screening-agent to use RDS PostgreSQL 15
+
+
 ## Tech Stack
 
 - Python 3.11
