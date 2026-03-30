@@ -17,7 +17,14 @@ class CoordinatorRepository:
             return "CONSIDER", "screened"
         return "REJECT", "rejected"
 
-    def upsert_job(self, *, job_id: str, job_description: str, job_requirements: dict[str, Any]) -> None:
+    def upsert_job(
+        self,
+        *,
+        job_id: str,
+        job_description: str,
+        job_requirements: dict[str, Any],
+        title: str | None = None,
+    ) -> None:
         with transaction() as conn:
             with conn.cursor() as cur:
                 cur.execute(
@@ -27,11 +34,12 @@ class CoordinatorRepository:
                     ON CONFLICT (job_id)
                     DO UPDATE
                     SET
+                        title = EXCLUDED.title,
                         job_description = EXCLUDED.job_description,
                         job_requirements = EXCLUDED.job_requirements,
                         updated_at = NOW()
                     """,
-                    (job_id, job_id, job_description, Json(job_requirements or {})),
+                    (job_id, title or job_id, job_description, Json(job_requirements or {})),
                 )
 
     def create_candidate(

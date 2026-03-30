@@ -13,6 +13,7 @@ from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
 
 from app.main import app
 from app.routes import (
+    create_job,
     get_job_artifacts,
     list_jobs,
     get_job,
@@ -42,6 +43,11 @@ class FakeResponse:
 class FakeRepository:
     def __init__(self):
         self.applied_ranking = None
+        self.upserted_job = None
+
+    def upsert_job(self, **kwargs):
+        self.upserted_job = kwargs
+        return None
 
     def list_jobs(self):
         return [
@@ -234,6 +240,44 @@ def build_docx_bytes(text: str) -> bytes:
 
 
 class RoutesReadApiTests(unittest.TestCase):
+    @patch("app.routes.CoordinatorRepository")
+    def test_create_job_route_creates_metadata_without_candidate_run(self, repo_cls):
+        repository = FakeRepository()
+        repo_cls.return_value = repository
+
+        result = create_job(
+            type(
+                "CreateJobRequestObj",
+                (),
+                {
+                    "job_id": "job-new",
+                    "title": "Backend Engineer",
+                    "job_description": "Need python fastapi and sql",
+                    "required_skills": ["python", "fastapi", "sql"],
+                    "preferred_skills": ["docker"],
+                    "min_years_experience": 3,
+                    "education_level": "Bachelor's",
+                },
+            )()
+        )
+
+        self.assertEqual(result.job_id, "job-new")
+        self.assertEqual(result.status, "created")
+        self.assertEqual(
+            repository.upserted_job,
+            {
+                "job_id": "job-new",
+                "title": "Backend Engineer",
+                "job_description": "Need python fastapi and sql",
+                "job_requirements": {
+                    "required_skills": ["python", "fastapi", "sql"],
+                    "preferred_skills": ["docker"],
+                    "min_years_experience": 3,
+                    "education_level": "Bachelor's",
+                },
+            },
+        )
+
     def test_websocket_endpoint_accepts_connections_and_replies_to_ping(self):
         client = TestClient(app)
 

@@ -28,10 +28,14 @@ services:
       - DB_USER=user
       - DB_PASSWORD=password
     depends_on:
-      - postgres
-      - resume-intake-agent
-      - screening-agent
-      - audit-agent
+      db-migrate:
+        condition: service_completed_successfully
+      resume-intake-agent:
+        condition: service_healthy
+      screening-agent:
+        condition: service_healthy
+      audit-agent:
+        condition: service_healthy
     networks:
       - app-net  
 
@@ -112,11 +116,37 @@ services:
       POSTGRES_DB: hiring_system
       POSTGRES_USER: user
       POSTGRES_PASSWORD: password
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d hiring_system"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
     ports:
       - "5432:5432"
+    networks:
+      - app-net  
+
+  db-migrate:
+    image: postgres:15
+    depends_on:
+      postgres:
+        condition: service_healthy
+    entrypoint: []
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        psql -h postgres -p 5432 -U user -d hiring_system -v ON_ERROR_STOP=1 -f /seed/init_db.sql
+        for file in /migrations/*.sql; do
+          [ -f "$$file" ] || continue
+          echo "Applying migration: $$(basename "$$file")"
+          psql -h postgres -p 5432 -U user -d hiring_system -v ON_ERROR_STOP=1 -f "$$file"
+        done
+    environment:
+      PGPASSWORD: password
     volumes:
-      - ../db/init_db.sql:/docker-entrypoint-initdb.d/init_db.sql
-      - ../db/migrations:/migrations
+      - ../db/init_db.sql:/seed/init_db.sql:ro
+      - ../db/migrations:/migrations:ro
     networks:
       - app-net  
 

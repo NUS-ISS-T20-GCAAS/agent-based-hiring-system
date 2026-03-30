@@ -164,6 +164,8 @@ Health endpoints expose `llm_enabled` for the agents that support model executio
 docker compose -f infra/docker-compose.yml up --build
 ```
 
+On startup, the compose stack now runs `db/init_db.sql` and all files in `db/migrations/` through a dedicated migration step before the coordinator starts.
+
 This starts:
 
 - frontend on `http://localhost:3000`
@@ -180,6 +182,8 @@ This starts:
 docker compose -f services/docker-compose.yml up --build
 ```
 
+On startup, the compose stack now runs `db/init_db.sql` and all files in `db/migrations/` through a dedicated migration step before the coordinator starts.
+
 ### Apply database migrations
 
 ```bash
@@ -191,6 +195,8 @@ Or for the backend-only compose file:
 ```bash
 sh db/migrate.sh services/docker-compose.yml
 ```
+
+This is mainly useful when you want to re-apply the schema manually against an already-running database.
 
 ### Helpful Make targets
 

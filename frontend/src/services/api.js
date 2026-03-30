@@ -59,7 +59,7 @@ class ApiService {
    * Create new job
    */
   async createJob(jobData) {
-    return this.request('/api/jobs', {
+    return this.request('/api/jobs/create', {
       method: 'POST',
       body: JSON.stringify(jobData),
     });
