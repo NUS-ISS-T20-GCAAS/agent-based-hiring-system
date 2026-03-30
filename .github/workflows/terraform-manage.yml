@@ -234,6 +234,37 @@ jobs:
         run: terraform init
         working-directory: ${{ env.TF_DIR }}
 
+      - name: Reconcile Route State
+        run: |
+          echo "🔧 Checking if aws_route.private_nat needs importing..."
+
+          # Check if the resource already exists in Terraform state
+          if terraform state show aws_route.private_nat >/dev/null 2>&1; then
+            echo "✅ aws_route.private_nat already in state — no action needed."
+          else
+            # Get the private route table ID from state
+            RT_ID=$(terraform state show aws_route_table.private 2>/dev/null | grep '^  id' | awk -F'"' '{print $2}' || echo "")
+
+            if [ -n "$RT_ID" ]; then
+              # Check if the route exists in AWS
+              ROUTE_EXISTS=$(aws ec2 describe-route-tables \
+                --route-table-ids "$RT_ID" \
+                --query "RouteTables[0].Routes[?DestinationCidrBlock=='0.0.0.0/0' && NatGatewayId!=null]" \
+                --output text 2>/dev/null || echo "")
+
+              if [ -n "$ROUTE_EXISTS" ] && [ "$ROUTE_EXISTS" != "None" ]; then
+                echo "📦 Found existing 0.0.0.0/0 route in $RT_ID — importing into state..."
+                terraform import aws_route.private_nat "${RT_ID}_0.0.0.0/0"
+                echo "✅ Imported successfully."
+              else
+                echo "ℹ️ No existing NAT route found in AWS — Terraform will create it."
+              fi
+            else
+              echo "ℹ️ No route table found in state — Terraform will create everything."
+            fi
+          fi
+        working-directory: ${{ env.TF_DIR }}
+
       - name: Terraform Plan
         run: |
           echo "🟢 Planning RECREATE for environment: ${{ github.event.inputs.environment }}"
