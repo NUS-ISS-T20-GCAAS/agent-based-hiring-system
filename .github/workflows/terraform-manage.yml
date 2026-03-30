@@ -208,7 +208,7 @@ jobs:
   # ════════════════════════════════════════════════
   recreate-apply:
     name: "🟢 Recreate — Terraform Apply"
-    # needs: destroy
+    needs: destroy
     runs-on: ubuntu-latest
     environment: terraform-${{ github.event.inputs.environment }}
     env:
