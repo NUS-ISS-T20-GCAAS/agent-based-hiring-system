@@ -1,6 +1,20 @@
 from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any
 
+class CreateJobRequest(BaseModel):
+    job_id: str
+    job_description: str
+    required_skills: list[str] = Field(default_factory=list)
+    preferred_skills: list[str] = Field(default_factory=list)
+    min_years_experience: Optional[int] = None
+    education_level: Optional[str] = None
+
+
+class CreateJobResponse(BaseModel):
+    job_id: str
+    status: str
+
+
 class JobRequest(BaseModel):
     job_id: str
     resume_url: str

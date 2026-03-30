@@ -135,19 +135,18 @@ function App() {
   // Event handlers
   const handleCreateJob = async () => {
     try {
+      const jobId = `sample-backend-${Date.now()}`;
+
       await api.createJob({
-        // title: 'Senior Python Developer',
-        // required_skills: ['Python', 'SQL', 'AWS'],
-        // preferred_skills: ['Machine Learning', 'Leadership'],
-        // min_years_experience: 5,
-        // education_level: "Bachelor's",
-        // description: 'Senior developer position requiring strong Python skills and cloud experience'
-        "job_id": "test-001",
-        "resume_url": "dummy.pdf",
-        "job_description": "Backend Engineer"
+        job_id: jobId,
+        job_description: 'Backend Engineer',
+        required_skills: ['python', 'fastapi', 'sql'],
+        preferred_skills: ['docker', 'aws'],
+        min_years_experience: 3,
       });
       
       await fetchJobs();
+      setSelectedJob(jobId);
     } catch (error) {
       console.error('Error creating job:', error);
       alert('Failed to create job: ' + error.message);

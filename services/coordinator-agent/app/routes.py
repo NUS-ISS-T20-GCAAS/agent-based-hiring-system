@@ -5,7 +5,7 @@ from decimal import Decimal
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 import requests
 
-from app.schemas import Artifact, JobRequest, JobResponse, RunRequest
+from app.schemas import Artifact, CreateJobRequest, CreateJobResponse, JobRequest, JobResponse, RunRequest
 from app.coordinator import run_job
 from app.events import emit_agent_activity, emit_candidate_update
 from app.repository import CoordinatorRepository
@@ -185,6 +185,28 @@ def _job_or_404(repository: CoordinatorRepository, job_id: str) -> dict:
 @router.post("/jobs", response_model=JobResponse)
 def submit_job(request: JobRequest):
     return run_job(request)
+
+
+@router.post("/jobs/create", response_model=CreateJobResponse)
+def create_job(request: CreateJobRequest):
+    repository = CoordinatorRepository()
+    job_requirements = {
+        "required_skills": request.required_skills,
+        "preferred_skills": request.preferred_skills,
+        "min_years_experience": request.min_years_experience,
+        "education_level": request.education_level,
+    }
+
+    try:
+        repository.upsert_job(
+            job_id=request.job_id,
+            job_description=request.job_description,
+            job_requirements=job_requirements,
+        )
+    except Exception:
+        raise HTTPException(status_code=503, detail="database unavailable")
+
+    return CreateJobResponse(job_id=request.job_id, status="created")
 
 
 @router.get("/jobs")
