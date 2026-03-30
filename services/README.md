@@ -41,6 +41,8 @@ Ranking is available as a separate manual step through `POST /jobs/{job_id}/rank
 docker compose -f services/docker-compose.yml up --build
 ```
 
+On startup, the compose stack runs `db/init_db.sql` and all files in `db/migrations/` through a dedicated migration step before the coordinator starts.
+
 Ports:
 
 - coordinator: `8000`
@@ -55,6 +57,8 @@ Ports:
 ```bash
 sh /Users/isaactan/Projects/agent-based-hiring-system/db/migrate.sh /Users/isaactan/Projects/agent-based-hiring-system/services/docker-compose.yml
 ```
+
+Use this when you want to re-apply the schema manually against an already-running local database.
 
 ## Environment Variables
 
