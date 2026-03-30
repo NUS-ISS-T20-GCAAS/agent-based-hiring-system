@@ -200,6 +200,7 @@ def create_job(request: CreateJobRequest):
     try:
         repository.upsert_job(
             job_id=request.job_id,
+            title=request.title,
             job_description=request.job_description,
             job_requirements=job_requirements,
         )

@@ -251,6 +251,7 @@ class RoutesReadApiTests(unittest.TestCase):
                 (),
                 {
                     "job_id": "job-new",
+                    "title": "Backend Engineer",
                     "job_description": "Need python fastapi and sql",
                     "required_skills": ["python", "fastapi", "sql"],
                     "preferred_skills": ["docker"],
@@ -266,6 +267,7 @@ class RoutesReadApiTests(unittest.TestCase):
             repository.upserted_job,
             {
                 "job_id": "job-new",
+                "title": "Backend Engineer",
                 "job_description": "Need python fastapi and sql",
                 "job_requirements": {
                     "required_skills": ["python", "fastapi", "sql"],

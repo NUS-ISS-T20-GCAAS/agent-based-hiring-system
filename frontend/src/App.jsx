@@ -133,23 +133,17 @@ function App() {
   };
 
   // Event handlers
-  const handleCreateJob = async () => {
+  const handleCreateJob = async (jobData) => {
     try {
-      const jobId = `sample-backend-${Date.now()}`;
-
-      await api.createJob({
-        job_id: jobId,
-        job_description: 'Backend Engineer',
-        required_skills: ['python', 'fastapi', 'sql'],
-        preferred_skills: ['docker', 'aws'],
-        min_years_experience: 3,
-      });
+      await api.createJob(jobData);
       
       await fetchJobs();
-      setSelectedJob(jobId);
+      setSelectedJob(jobData.job_id);
+      return jobData.job_id;
     } catch (error) {
       console.error('Error creating job:', error);
       alert('Failed to create job: ' + error.message);
+      throw error;
     }
   };
 

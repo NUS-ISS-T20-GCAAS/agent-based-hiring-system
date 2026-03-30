@@ -3,6 +3,7 @@ from typing import Optional, Dict, Any
 
 class CreateJobRequest(BaseModel):
     job_id: str
+    title: Optional[str] = None
     job_description: str
     required_skills: list[str] = Field(default_factory=list)
     preferred_skills: list[str] = Field(default_factory=list)
