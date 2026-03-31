@@ -218,7 +218,7 @@ const Dashboard = ({
           </div>
           <h2 className="text-2xl font-bold text-slate-900 mb-2">Upload Resumes</h2>
           <p className="text-slate-600 mb-6">
-            Our multi-agent system will automatically screen, assess, and rank candidates
+            Our multi-agent system will automatically intake, screen, and audit candidates before any manual reranking
           </p>
           
           <input

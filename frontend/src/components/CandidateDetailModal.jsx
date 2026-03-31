@@ -184,6 +184,51 @@ const CandidateDetailModal = ({ candidateId, onClose, onDeleteCandidate }) => {
                 </div>
               </div>
 
+              {/* Manual Ranking */}
+              <div>
+                <h3 className="text-lg font-bold text-slate-900 mb-4">Manual Ranking</h3>
+                <div className={`rounded-xl border p-4 ${
+                  candidate.ranking?.position != null
+                    ? 'border-violet-200 bg-violet-50'
+                    : 'border-slate-200 bg-slate-50'
+                }`}>
+                  {candidate.ranking?.position != null ? (
+                    <div className="space-y-2">
+                      <p className="text-sm font-semibold text-violet-900">
+                        Ranked #{candidate.ranking.position}
+                      </p>
+                      <p className="text-sm text-violet-800">
+                        Manual reranking keeps screening and audit decisions unchanged.
+                      </p>
+                      {candidate.ranking.method && (
+                        <p className="text-sm text-violet-800">
+                          Method: {candidate.ranking.method.replaceAll('_', ' ')}
+                        </p>
+                      )}
+                      {candidate.ranking.score != null && (
+                        <p className="text-sm text-violet-800">
+                          Ranking score: {formatPercent(candidate.ranking.score)}
+                        </p>
+                      )}
+                      {candidate.ranking.ranked_at && (
+                        <p className="text-sm text-violet-800">
+                          Ranked at: {formatTime(candidate.ranking.ranked_at)}
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <p className="text-sm font-semibold text-slate-900">
+                        No manual ranking applied
+                      </p>
+                      <p className="text-sm text-slate-600">
+                        This candidate is currently ordered by screening score only.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
               {/* Review Status */}
               <div>
                 <h3 className="text-lg font-bold text-slate-900 mb-4">Review Status</h3>

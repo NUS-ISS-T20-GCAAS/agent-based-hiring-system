@@ -47,6 +47,30 @@ class FakeRepository:
         self.upserted_job = None
         self.saved_artifacts = []
         self.deleted_candidate_id = None
+        self.enqueued_jobs = []
+        self.candidates = {
+            "c-1": {
+                "id": "c-1",
+                "job_id": "job-1",
+                "name": "Alice",
+                "email": "alice@example.com",
+                "phone": None,
+                "skills": ["python", "fastapi"],
+                "status": "shortlisted",
+                "recommendation": "SHORTLIST",
+                "qualification_score": 0.8,
+                "skills_score": 0.7,
+                "composite_score": 0.77,
+                "rank_position": None,
+                "ranking_score": None,
+                "ranking_method": None,
+                "ranked_at": None,
+                "needs_human_review": True,
+                "review_status": "pending",
+                "review_reasons": ["Screening: confidence 65% below floor 70%"],
+                "escalation_source": "screening",
+            }
+        }
 
     def upsert_job(self, **kwargs):
         self.upserted_job = kwargs
@@ -87,48 +111,27 @@ class FakeRepository:
         }
 
     def list_candidates(self, *, job_id=None):
-        return [
-            {
-                "id": "c-1",
-                "job_id": job_id or "job-1",
-                "name": "Alice",
-                "email": "alice@example.com",
-                "phone": None,
-                "skills": ["python", "fastapi"],
-                "status": "shortlisted",
-                "recommendation": "SHORTLIST",
-                "qualification_score": 0.8,
-                "skills_score": 0.7,
-                "composite_score": 0.77,
-                "needs_human_review": True,
-                "review_status": "pending",
-                "review_reasons": ["Screening: confidence 65% below floor 70%"],
-                "escalation_source": "screening",
-            }
+        candidates = [
+            dict(candidate)
+            for candidate in self.candidates.values()
+            if job_id is None or candidate["job_id"] == job_id
         ]
+        candidates.sort(
+            key=lambda candidate: (
+                candidate["rank_position"] is None,
+                candidate["rank_position"] if candidate["rank_position"] is not None else 9999,
+                -(candidate["composite_score"] or 0),
+            )
+        )
+        return candidates
 
     def get_candidate(self, *, candidate_id: str):
         if candidate_id == self.deleted_candidate_id:
             return None
         if candidate_id == "missing":
             return None
-        return {
-            "id": candidate_id,
-            "job_id": "job-1",
-            "name": "Alice",
-            "email": "alice@example.com",
-            "phone": None,
-            "skills": ["python", "fastapi"],
-            "status": "shortlisted",
-            "recommendation": "SHORTLIST",
-            "qualification_score": 0.8,
-            "skills_score": 0.7,
-            "composite_score": 0.77,
-            "needs_human_review": True,
-            "review_status": "pending",
-            "review_reasons": ["Screening: confidence 65% below floor 70%"],
-            "escalation_source": "screening",
-        }
+        candidate = self.candidates.get(candidate_id)
+        return dict(candidate) if candidate else None
 
     def get_candidate_decisions(self, *, candidate_id: str):
         decisions = [
@@ -202,12 +205,25 @@ class FakeRepository:
             "avg_score": 0.66,
         }
 
-    def apply_candidate_ranking(self, *, job_id: str, ranked_candidates):
+    def apply_candidate_ranking(self, *, job_id: str, ranked_candidates, ranking_method=None, ranked_at=None):
         self.applied_ranking = {
             "job_id": job_id,
             "ranked_candidates": ranked_candidates,
+            "ranking_method": ranking_method,
+            "ranked_at": ranked_at,
         }
-        return len(ranked_candidates)
+        updated = 0
+        for index, candidate in enumerate(ranked_candidates, start=1):
+            candidate_id = candidate.get("candidate_id") or candidate.get("id")
+            stored = self.candidates.get(candidate_id)
+            if not stored or stored["job_id"] != job_id:
+                continue
+            stored["rank_position"] = index
+            stored["ranking_score"] = candidate.get("score")
+            stored["ranking_method"] = ranking_method
+            stored["ranked_at"] = ranked_at
+            updated += 1
+        return updated
 
     def save_artifact(self, *, job_id: str, candidate_id: str, artifact):
         self.saved_artifacts.append(
@@ -227,6 +243,26 @@ class FakeRepository:
             }
         )
         return None
+
+    def enqueue_workflow_job(self, *, job_id: str, filename: str, request):
+        queue_id = f"queue-{len(self.enqueued_jobs) + 1}"
+        self.enqueued_jobs.append(
+            {
+                "queue_id": queue_id,
+                "job_id": job_id,
+                "filename": filename,
+                "request": request,
+            }
+        )
+        return queue_id
+
+    def get_workflow_queue_counts(self):
+        return {
+            "pending": len(self.enqueued_jobs),
+            "running": 0,
+            "failed": 0,
+            "completed": 0,
+        }
 
     def delete_candidate(self, *, candidate_id: str):
         if candidate_id == "missing" or candidate_id == self.deleted_candidate_id:
@@ -397,11 +433,13 @@ class RoutesReadApiTests(unittest.TestCase):
         self.assertEqual(candidates[0]["scores"]["composite"], 0.77)
         self.assertTrue(candidates[0]["needs_human_review"])
         self.assertEqual(candidates[0]["review_status"], "pending")
+        self.assertIsNone(candidates[0]["ranking"]["position"])
 
         candidate = get_candidate("c-1")
         self.assertEqual(candidate["name"], "Alice")
         self.assertEqual(candidate["escalation_source"], "screening")
         self.assertEqual(candidate["review_reasons"], ["Screening: confidence 65% below floor 70%"])
+        self.assertIsNone(candidate["ranking"]["position"])
 
         decisions = get_candidate_decisions("c-1")
         self.assertEqual(len(decisions), 1)
@@ -421,11 +459,22 @@ class RoutesReadApiTests(unittest.TestCase):
         self.assertEqual(rank_result["ranked_candidates"], 1)
         self.assertEqual(repository.applied_ranking["job_id"], "job-1")
         self.assertEqual(repository.applied_ranking["ranked_candidates"][0]["candidate_id"], "c-1")
+        self.assertEqual(repository.applied_ranking["ranking_method"], "heuristic_composite_score")
+        self.assertEqual(repository.applied_ranking["ranked_at"], "2026-03-25T10:00:00+00:00")
         self.assertEqual(len(repository.saved_artifacts), 1)
         self.assertEqual(repository.saved_artifacts[0]["artifact_type"], "candidate_ranking_result")
         self.assertEqual(repository.saved_artifacts[0]["payload"]["rank"], 1)
         self.assertEqual(repository.saved_artifacts[0]["payload"]["method"], "heuristic_composite_score")
         self.assertEqual(post_mock.call_count, 1)
+
+        ranked_candidate = get_candidate("c-1")
+        self.assertEqual(ranked_candidate["status"], "shortlisted")
+        self.assertEqual(ranked_candidate["recommendation"], "SHORTLIST")
+        self.assertEqual(ranked_candidate["scores"]["composite"], 0.77)
+        self.assertEqual(ranked_candidate["ranking"]["position"], 1)
+        self.assertEqual(ranked_candidate["ranking"]["score"], 0.77)
+        self.assertEqual(ranked_candidate["ranking"]["method"], "heuristic_composite_score")
+        self.assertEqual(ranked_candidate["ranking"]["ranked_at"], "2026-03-25T10:00:00+00:00")
 
         decisions_after_rank = get_candidate_decisions("c-1")
         self.assertEqual(len(decisions_after_rank), 2)
@@ -443,6 +492,67 @@ class RoutesReadApiTests(unittest.TestCase):
         self.assertEqual(result, {"job_id": "job-1", "ranked_candidates": 0, "status": "completed"})
         self.assertIsNone(repository.applied_ranking)
         self.assertEqual(post_mock.call_count, 0)
+
+    @patch("app.routes.requests.post")
+    @patch("app.routes.CoordinatorRepository")
+    def test_list_candidates_prefers_manual_rank_after_rerank(self, repo_cls, post_mock):
+        repository = FakeRepository()
+        repository.candidates["c-2"] = {
+            "id": "c-2",
+            "job_id": "job-1",
+            "name": "Bob",
+            "email": "bob@example.com",
+            "phone": None,
+            "skills": ["python"],
+            "status": "screened",
+            "recommendation": "CONSIDER",
+            "qualification_score": 0.72,
+            "skills_score": 0.4,
+            "composite_score": 0.81,
+            "rank_position": None,
+            "ranking_score": None,
+            "ranking_method": None,
+            "ranked_at": None,
+            "needs_human_review": False,
+            "review_status": "not_required",
+            "review_reasons": [],
+            "escalation_source": "none",
+        }
+        repo_cls.return_value = repository
+        post_mock.return_value = FakeResponse(
+            {
+                "artifact_id": "a-rank",
+                "entity_id": "job-1",
+                "correlation_id": "cid-rank",
+                "agent_id": "ranking-agent",
+                "agent_type": "ranking",
+                "artifact_type": "candidate_ranking_result",
+                "payload": {
+                    "job_id": "job-1",
+                    "ranked_candidates": [
+                        {"candidate_id": "c-1", "name": "Alice", "score": 0.77, "rank": 1},
+                        {"candidate_id": "c-2", "name": "Bob", "score": 0.74, "rank": 2},
+                    ],
+                    "top_candidate_id": "c-1",
+                    "total_candidates": 2,
+                    "avg_score": 0.755,
+                    "details": {"method": "heuristic_composite_score", "top_k": None},
+                },
+                "confidence": 0.6,
+                "explanation": "ranking ok",
+                "created_at": "2026-03-25T10:00:00+00:00",
+                "version": 1,
+            }
+        )
+
+        rank_job_candidates("job-1")
+
+        candidates = list_candidates(job_id="job-1")
+        self.assertEqual([candidate["id"] for candidate in candidates], ["c-1", "c-2"])
+        self.assertEqual(candidates[0]["ranking"]["position"], 1)
+        self.assertEqual(candidates[1]["ranking"]["position"], 2)
+        self.assertEqual(candidates[0]["status"], "shortlisted")
+        self.assertEqual(candidates[1]["status"], "screened")
 
     @patch("app.routes.requests.post", side_effect=requests.exceptions.ConnectionError("boom"))
     @patch("app.routes.CoordinatorRepository")
@@ -523,10 +633,10 @@ class RoutesReadApiTests(unittest.TestCase):
         self.assertFalse(result["review_required"])
         self.assertEqual(post_mock.call_count, 1)
 
-    @patch("app.routes.run_job")
     @patch("app.routes.CoordinatorRepository")
-    def test_batch_upload_route(self, repo_cls, run_job_mock):
-        repo_cls.return_value = FakeRepository()
+    def test_batch_upload_route(self, repo_cls):
+        repository = FakeRepository()
+        repo_cls.return_value = repository
         background_tasks = BackgroundTasks()
 
         files = [
@@ -538,18 +648,19 @@ class RoutesReadApiTests(unittest.TestCase):
         self.assertEqual(result["queued"], 2)
         self.assertEqual(result["failed"], 0)
         self.assertEqual(result["status"], "accepted")
-        self.assertEqual(len(background_tasks.tasks), 2)
-        self.assertEqual(run_job_mock.call_count, 0)
-        first_request = background_tasks.tasks[0].kwargs["request"]
+        self.assertEqual(len(background_tasks.tasks), 0)
+        self.assertEqual(len(repository.enqueued_jobs), 2)
+        first_request = repository.enqueued_jobs[0]["request"]
         self.assertEqual(first_request.required_skills, ["python", "fastapi"])
         self.assertEqual(first_request.preferred_skills, ["docker"])
         self.assertEqual(first_request.min_years_experience, 3)
         self.assertEqual(result["results"][0]["status"], "queued")
+        self.assertEqual(result["results"][0]["queue_id"], "queue-1")
 
-    @patch("app.routes.run_job")
     @patch("app.routes.CoordinatorRepository")
-    def test_batch_upload_route_extracts_txt_pdf_and_docx(self, repo_cls, run_job_mock):
-        repo_cls.return_value = FakeRepository()
+    def test_batch_upload_route_extracts_txt_pdf_and_docx(self, repo_cls):
+        repository = FakeRepository()
+        repo_cls.return_value = repository
         background_tasks = BackgroundTasks()
 
         files = [
@@ -566,15 +677,14 @@ class RoutesReadApiTests(unittest.TestCase):
 
         self.assertEqual(result["queued"], 3)
         self.assertEqual(result["failed"], 0)
-        self.assertEqual(len(background_tasks.tasks), 3)
-        self.assertEqual(run_job_mock.call_count, 0)
-        self.assertEqual(background_tasks.tasks[0].kwargs["request"].resume_text, "Senior Python engineer")
-        self.assertIn("PDF Resume Text", background_tasks.tasks[1].kwargs["request"].resume_text)
-        self.assertIn("DOCX Resume Text", background_tasks.tasks[2].kwargs["request"].resume_text)
+        self.assertEqual(len(background_tasks.tasks), 0)
+        self.assertEqual(len(repository.enqueued_jobs), 3)
+        self.assertEqual(repository.enqueued_jobs[0]["request"].resume_text, "Senior Python engineer")
+        self.assertIn("PDF Resume Text", repository.enqueued_jobs[1]["request"].resume_text)
+        self.assertIn("DOCX Resume Text", repository.enqueued_jobs[2]["request"].resume_text)
 
-    @patch("app.routes.run_job")
     @patch("app.routes.CoordinatorRepository")
-    def test_upload_route_rejects_unsupported_resume_type(self, repo_cls, run_job_mock):
+    def test_upload_route_rejects_unsupported_resume_type(self, repo_cls):
         repo_cls.return_value = FakeRepository()
 
         with self.assertRaises(HTTPException) as ctx:
@@ -588,7 +698,28 @@ class RoutesReadApiTests(unittest.TestCase):
 
         self.assertEqual(ctx.exception.status_code, 415)
         self.assertIn("unsupported resume file type", ctx.exception.detail)
-        self.assertEqual(run_job_mock.call_count, 0)
+
+    @patch("app.routes.CoordinatorRepository")
+    def test_upload_route_returns_503_when_queue_is_unavailable(self, repo_cls):
+        repository = FakeRepository()
+
+        def failing_enqueue(**_kwargs):
+            raise RuntimeError("db down")
+
+        repository.enqueue_workflow_job = failing_enqueue
+        repo_cls.return_value = repository
+
+        with self.assertRaises(HTTPException) as ctx:
+            asyncio.run(
+                upload_candidate(
+                    background_tasks=BackgroundTasks(),
+                    job_id="job-1",
+                    file=FakeUploadFile("resume.txt", b"Python FastAPI engineer", "text/plain"),
+                )
+            )
+
+        self.assertEqual(ctx.exception.status_code, 503)
+        self.assertEqual(ctx.exception.detail, "workflow queue unavailable")
 
     @patch("app.routes.run_job")
     @patch("app.routes.CoordinatorRepository")

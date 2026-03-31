@@ -47,6 +47,24 @@ def _json_safe(value):
     return value
 
 
+def _optional_float(value: object) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, Decimal):
+        return float(value)
+    if isinstance(value, (int, float)):
+        return float(value)
+    return None
+
+
+def _optional_timestamp(value: object) -> str | None:
+    if value is None:
+        return None
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    return str(value)
+
+
 def _extract_required_skills(job_description: str | None) -> list[str]:
     if not job_description:
         return []
@@ -123,6 +141,7 @@ def _candidate_payload(row: dict) -> dict:
     skills = row.get("skills") if isinstance(row.get("skills"), list) else []
     review_reasons = _string_list(row.get("review_reasons"))
     needs_human_review = bool(row.get("needs_human_review"))
+    rank_position = row.get("rank_position")
     return {
         "id": row["id"],
         "job_id": row.get("job_id"),
@@ -141,6 +160,12 @@ def _candidate_payload(row: dict) -> dict:
         "review_status": row.get("review_status") or ("pending" if needs_human_review else "not_required"),
         "review_reasons": review_reasons,
         "escalation_source": row.get("escalation_source") or "none",
+        "ranking": {
+            "position": int(rank_position) if isinstance(rank_position, int) else None,
+            "score": _optional_float(row.get("ranking_score")),
+            "method": row.get("ranking_method"),
+            "ranked_at": _optional_timestamp(row.get("ranked_at")),
+        },
     }
 
 
@@ -263,41 +288,6 @@ def _build_upload_job_request(
     )
 
 
-def _run_upload_workflow_in_background(*, request: JobRequest, filename: str) -> None:
-    try:
-        emit_agent_activity(
-            agent="coordinator",
-            message=f"Processing queued upload for {filename}",
-            entity_id=request.job_id,
-        )
-        run_job(request)
-    except HTTPException as exc:
-        detail = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
-        logger.error(
-            "background_upload_workflow_failed",
-            entity_id=request.job_id,
-            filename=filename,
-            error=detail,
-        )
-        emit_agent_activity(
-            agent="coordinator",
-            message=f"Queued upload failed for {filename}: {detail}",
-            entity_id=request.job_id,
-        )
-    except Exception as exc:
-        logger.error(
-            "background_upload_workflow_failed",
-            entity_id=request.job_id,
-            filename=filename,
-            error=str(exc),
-        )
-        emit_agent_activity(
-            agent="coordinator",
-            message=f"Queued upload failed for {filename}: {exc}",
-            entity_id=request.job_id,
-        )
-
-
 def _job_or_404(repository: CoordinatorRepository, job_id: str) -> dict:
     row = repository.get_job(job_id=job_id)
     if not row:
@@ -375,9 +365,12 @@ def rank_job_candidates(job_id: str):
         raise HTTPException(status_code=503, detail="ranking unavailable")
 
     payload = artifact.payload if isinstance(artifact.payload, dict) else {}
+    details = payload.get("details") if isinstance(payload.get("details"), dict) else {}
     ranked = repository.apply_candidate_ranking(
         job_id=job_id,
         ranked_candidates=payload.get("ranked_candidates") or [],
+        ranking_method=details.get("method"),
+        ranked_at=artifact.created_at,
     )
     for candidate_id, ranking_artifact in _build_ranking_candidate_artifacts(
         job_id=job_id,
@@ -418,7 +411,6 @@ def list_candidates(job_id: str | None = Query(default=None)):
 async def _process_upload_files(
     *,
     repository: CoordinatorRepository,
-    background_tasks: BackgroundTasks,
     job_id: str,
     files: list[UploadFile],
 ) -> dict:
@@ -441,11 +433,20 @@ async def _process_upload_files(
                 job_description=job_description,
                 job_requirements=job_requirements,
             )
-            background_tasks.add_task(
-                _run_upload_workflow_in_background,
-                request=request,
-                filename=filename,
-            )
+            try:
+                queue_id = repository.enqueue_workflow_job(
+                    job_id=job_id,
+                    filename=filename,
+                    request=request,
+                )
+            except Exception as exc:
+                logger.error(
+                    "workflow_enqueue_failed",
+                    entity_id=job_id,
+                    filename=filename,
+                    error=str(exc),
+                )
+                raise HTTPException(status_code=503, detail="workflow queue unavailable")
             emit_agent_activity(
                 agent="coordinator",
                 message=f"Queued upload workflow for {filename}",
@@ -456,6 +457,7 @@ async def _process_upload_files(
                     "file": filename,
                     "status": "queued",
                     "job_id": job_id,
+                    "queue_id": queue_id,
                     "resume_url": request.resume_url,
                 }
             )
@@ -502,10 +504,10 @@ async def upload_candidate(
     job_id: str = Query(...),
     file: UploadFile = File(...),
 ):
+    _ = background_tasks
     repository = CoordinatorRepository()
     result = await _process_upload_files(
         repository=repository,
-        background_tasks=background_tasks,
         job_id=job_id,
         files=[file],
     )
@@ -523,10 +525,10 @@ async def upload_candidates(
     job_id: str = Query(...),
     files: list[UploadFile] = File(...),
 ):
+    _ = background_tasks
     repository = CoordinatorRepository()
     result = await _process_upload_files(
         repository=repository,
-        background_tasks=background_tasks,
         job_id=job_id,
         files=files,
     )

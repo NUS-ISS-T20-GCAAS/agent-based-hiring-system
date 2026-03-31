@@ -17,6 +17,7 @@ class EventHub:
     def __init__(self) -> None:
         self._connections: set[WebSocket] = set()
         self._lock = Lock()
+        self._loop: asyncio.AbstractEventLoop | None = None
 
     def active_count(self) -> int:
         with self._lock:
@@ -24,7 +25,9 @@ class EventHub:
 
     async def connect(self, websocket: WebSocket) -> None:
         await websocket.accept()
+        loop = asyncio.get_running_loop()
         with self._lock:
+            self._loop = loop
             self._connections.add(websocket)
 
     def disconnect(self, websocket: WebSocket) -> None:
@@ -58,6 +61,13 @@ class EventHub:
 
         if loop and loop.is_running():
             loop.create_task(self.broadcast(message))
+            return
+
+        with self._lock:
+            background_loop = self._loop
+
+        if background_loop and background_loop.is_running():
+            asyncio.run_coroutine_threadsafe(self.broadcast(message), background_loop)
             return
 
         try:

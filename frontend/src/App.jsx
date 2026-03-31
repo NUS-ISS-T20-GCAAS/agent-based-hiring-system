@@ -163,6 +163,28 @@ function App() {
       const data = await api.getCandidates(jobId);
       if (jobId === selectedJobRef.current) {
         setCandidates(data);
+        const processingCount = data.filter(
+          (candidate) => candidate.status?.toLowerCase() === 'processing'
+        ).length;
+        if (data.length > 0 && processingCount === 0) {
+          setJobRunState((prev) => {
+            const current = prev[jobId];
+            if (!current || (current.queuedUploads || 0) === 0) {
+              return prev;
+            }
+
+            return {
+              ...prev,
+              [jobId]: {
+                ...current,
+                queuedUploads: 0,
+                lastActivityMessage: current.lastActivityMessage || 'Processing completed',
+                lastEventStatus: 'completed',
+                lastUpdatedAt: new Date().toISOString(),
+              },
+            };
+          });
+        }
       }
     } catch (error) {
       console.error('Error fetching candidates:', error);
@@ -233,10 +255,7 @@ function App() {
     
     try {
       await api.rankCandidates(selectedJob);
-      
-      setTimeout(async () => {
-        await fetchCandidates();
-      }, 1000);
+      await fetchCandidates();
     } catch (error) {
       console.error('Error ranking candidates:', error);
       alert('Ranking failed: ' + error.message);
@@ -274,20 +293,26 @@ function App() {
     setAgentActivity([]);
   };
 
-  const selectedJobRecord = jobs.find((job) => job.job_id === selectedJob) || null;
   const selectedJobRunState = selectedJob ? (jobRunState[selectedJob] || null) : null;
   const processingCandidatesCount = candidates.filter(
     (candidate) => candidate.status?.toLowerCase() === 'processing'
   ).length;
   const queuedUploadsCount = selectedJobRunState?.queuedUploads || 0;
-  const hasUploadActivity = Boolean(
-    selectedJobRunState?.lastQueuedAt || selectedJobRunState?.lastSubmittedFiles?.length
-  );
-  const selectedJobIsRunning = hasUploadActivity && (
-    queuedUploadsCount > 0 ||
-    processingCandidatesCount > 0 ||
-    (selectedJobRecord?.status || '').toLowerCase() === 'processing'
-  );
+  const selectedJobIsRunning = queuedUploadsCount > 0 || processingCandidatesCount > 0;
+
+  useEffect(() => {
+    if (!selectedJob || !selectedJobIsRunning) {
+      return undefined;
+    }
+
+    const intervalId = setInterval(() => {
+      fetchCandidates(selectedJob);
+      fetchStats(selectedJob);
+      fetchJobs();
+    }, 2000);
+
+    return () => clearInterval(intervalId);
+  }, [selectedJob, selectedJobIsRunning]);
 
   // Tab navigation
   const tabs = [

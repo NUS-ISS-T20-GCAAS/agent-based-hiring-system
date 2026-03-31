@@ -14,6 +14,7 @@ const Candidates = ({
   latestActivityMessage,
 }) => {
   const isCandidateProfileLoading = (candidate) => (candidate?.name || '').trim().toLowerCase() === 'unknown candidate';
+  const hasManualRanking = candidates.some((candidate) => candidate.ranking?.position != null);
 
   const formatEscalationSource = (source) => {
     const labels = {
@@ -24,6 +25,13 @@ const Candidates = ({
     };
 
     return labels[source] || 'Review';
+  };
+
+  const getRankLabel = (candidate, index) => {
+    if (candidate.ranking?.position != null) {
+      return `#${candidate.ranking.position}`;
+    }
+    return `#${index + 1}`;
   };
 
   if (candidates.length === 0 && !isRunning) {
@@ -77,7 +85,9 @@ const Candidates = ({
         <div>
           <h2 className="text-2xl font-bold text-slate-900">Candidate Rankings</h2>
           <p className="text-sm text-slate-600 mt-1">
-            {candidates.length} candidate{candidates.length !== 1 ? 's' : ''} sorted by composite score
+            {hasManualRanking
+              ? `${candidates.length} candidate${candidates.length !== 1 ? 's' : ''} ordered by manual ranking`
+              : `${candidates.length} candidate${candidates.length !== 1 ? 's' : ''} sorted by screening score`}
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -86,7 +96,7 @@ const Candidates = ({
             className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 transition-colors"
           >
             <TrendingUp className="w-4 h-4" />
-            Re-rank All
+            Apply Manual Ranking
           </button>
           <button
             onClick={onRefresh}
@@ -117,8 +127,13 @@ const Candidates = ({
             <div className="flex items-start justify-between mb-4">
               <div className="flex items-start gap-4">
                 {/* Rank Badge */}
-                <div className="flex items-center justify-center w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full text-white font-bold text-lg flex-shrink-0">
-                  #{index + 1}
+                <div className="flex flex-col items-center gap-1 flex-shrink-0">
+                  <div className="flex items-center justify-center w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full text-white font-bold text-lg">
+                    {getRankLabel(candidate, index)}
+                  </div>
+                  <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                    {candidate.ranking?.position != null ? 'Manual Rank' : 'Score Order'}
+                  </span>
                 </div>
                 
                 {/* Candidate Info */}
@@ -153,6 +168,13 @@ const Candidates = ({
                       </span>
                     )}
                   </div>
+                  {candidate.ranking?.position != null && (
+                    <p className="mt-2 text-sm text-slate-600">
+                      Manual ranking #{candidate.ranking.position}
+                      {candidate.ranking.method ? ` via ${candidate.ranking.method.replaceAll('_', ' ')}` : ''}
+                      {candidate.ranking.score != null ? ` with score ${formatPercent(candidate.ranking.score)}` : ''}
+                    </p>
+                  )}
                 </div>
               </div>
               

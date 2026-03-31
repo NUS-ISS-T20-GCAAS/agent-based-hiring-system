@@ -19,6 +19,7 @@ The coordinator is responsible for:
 
 - receiving workflow requests
 - parsing uploaded resume files
+- enqueuing durable upload workflows in Postgres
 - calling agent services over HTTP
 - persisting workflow state and artifacts to Postgres
 - exposing read APIs for jobs, candidates, decisions, stats, health, and audit checks
@@ -27,11 +28,14 @@ The coordinator is responsible for:
 
 The default coordinator path is:
 
-1. bootstrap job, candidate, and workflow state
-2. call resume intake
-3. call screening
-4. call audit
-5. persist artifacts and update candidate state
+1. accept upload requests and parse TXT, PDF, or DOCX resumes
+2. enqueue workflow jobs in Postgres
+3. coordinator worker claims queued jobs
+4. bootstrap job, candidate, and workflow state
+5. call resume intake
+6. call screening
+7. call audit
+8. persist artifacts and update candidate state
 
 Ranking is available as a separate manual step through `POST /jobs/{job_id}/rank`.
 
@@ -71,6 +75,7 @@ Relevant local environment variables:
 - `RANKING_AGENT_URL`
 - `AUDIT_AGENT_URL`
 - `REQUEST_TIMEOUT`
+- `QUEUE_POLL_INTERVAL_SECONDS`
 - `DB_HOST`
 - `DB_PORT`
 - `DB_NAME`
@@ -81,7 +86,7 @@ Behavior notes:
 
 - Resume intake, screening, and audit use OpenAI when configured and fall back when unavailable.
 - Ranking is heuristic only in the current codebase.
-- Coordinator health checks only report whether the services are reachable; they do not stream live execution state.
+- Coordinator health now includes queue worker state and workflow queue counts when the database is reachable.
 
 ## Upload Support
 
@@ -113,5 +118,5 @@ Parsing dependencies are installed in `coordinator-agent/requirements.txt`.
 ## Notes
 
 - This compose file is intended for development and local verification.
-- The main workflow is synchronous.
+- Upload-triggered workflows are queued and processed asynchronously by the coordinator worker.
 - Agent-local shared memory exists, but Postgres-backed coordinator persistence is the primary system of record.

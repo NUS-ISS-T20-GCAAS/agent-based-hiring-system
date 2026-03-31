@@ -74,7 +74,7 @@ OpenAI model hooks exist for resume intake, screening, and audit. Real model-bac
 - [x] Coordinator-level human review state derived from screening and audit
 - [x] Review-required state exposed through candidate read APIs
 - [ ] Ranking integrated into the default pipeline
-- [ ] Ranking artifact persisted in Postgres
+- [x] Manual ranking metadata persisted per candidate
 
 ### Database and Persistence
 - [x] Postgres migrations added
@@ -136,17 +136,17 @@ OpenAI model hooks exist for resume intake, screening, and audit. Real model-bac
 
 ## Phase 4 - Demo-Critical Work (NEXT)
 
-- [ ] Decide whether ranking should be manual-only or part of the main workflow
-- [ ] Persist ranking artifacts if ranking remains a first-class step
-- [ ] Add delete candidate endpoint and cleanup flow, or remove the unused frontend helper
-- [ ] Move long-running uploads/workflows to background jobs or queue-based orchestration
+- [x] Decide that ranking stays manual-only rather than part of the default workflow
+- [x] Persist manual ranking state without overwriting screening/audit outcomes
+- [x] Add delete candidate endpoint and cleanup flow
+- [x] Move long-running uploads/workflows to a Postgres-backed queue worker
 - [ ] Run a demo-readiness verification pass against the composed stack
 
 ## Phase 5 - Remaining Nice-To-Haves
 
 - [ ] Improve heuristic extraction and explanations where still weak
 - [ ] Expand dashboard support for richer fairness and workflow metrics
-- [ ] Add async queue or event-driven execution if scale requires it
+- [ ] Add multi-process queue infrastructure such as Redis/Celery if scale requires it
 
 ---
 
@@ -155,6 +155,8 @@ OpenAI model hooks exist for resume intake, screening, and audit. Real model-bac
 - PDF and DOCX extraction are now implemented in the coordinator via `pypdf` and `python-docx`.
 - Screening review flags and audit review flags are already combined into coordinator-level candidate review state.
 - The frontend shows review state in list and detail views.
+- The frontend now shows manual ranking separately from screening and audit outcomes.
 - The coordinator exposes a live WebSocket endpoint at `/ws` and broadcasts agent activity and candidate updates through a shared event hub.
 - The frontend connects to that live activity stream.
-- Batch upload requests can take longer for larger resume sets, so the frontend proxy timeout and body-size limits were increased to avoid premature 504s during long-running uploads.
+- Upload routes now enqueue parsed workflow requests in Postgres and a coordinator worker claims them asynchronously.
+- Batch upload requests can still take longer for larger resume sets overall, but the browser request no longer needs to stay open until every workflow finishes.

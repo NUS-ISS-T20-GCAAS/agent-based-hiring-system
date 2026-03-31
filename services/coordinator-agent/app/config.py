@@ -5,6 +5,7 @@ SCREENING_AGENT_URL = os.getenv("SCREENING_AGENT_URL", "http://screening-agent:8
 RANKING_AGENT_URL = os.getenv("RANKING_AGENT_URL", "http://ranking-agent:8000")
 AUDIT_AGENT_URL = os.getenv("AUDIT_AGENT_URL", "http://audit-agent:8000")
 REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "30"))
+QUEUE_POLL_INTERVAL_SECONDS = float(os.getenv("QUEUE_POLL_INTERVAL_SECONDS", "1.0"))
 
 DB_HOST = os.getenv("DB_HOST", "postgres")
 DB_PORT = int(os.getenv("DB_PORT", "5432"))

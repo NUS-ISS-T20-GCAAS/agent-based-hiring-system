@@ -13,16 +13,17 @@ An explainable hiring workflow built as cooperating services:
 
 ## Current Status
 
-The current codebase supports a working synchronous backend flow:
+The current codebase supports a working queued backend flow:
 
 1. Create a job through the metadata-only `POST /jobs/create` form, or upload resumes to an existing job with `POST /candidates/upload` or `POST /candidates/batch-upload`.
-2. The coordinator upserts job metadata, creates a candidate for each uploaded resume, and opens a workflow run.
-3. The coordinator calls `resume-intake-agent`.
-4. The coordinator calls `screening-agent`.
-5. The coordinator calls `audit-agent`.
-6. The coordinator persists artifacts from each completed step in Postgres.
-7. The coordinator updates candidate scores, recommendation, and human-review state.
-8. The frontend reads jobs, candidates, stats, decision history, audit output, and live activity updates from coordinator APIs.
+2. The coordinator parses uploaded TXT, PDF, and DOCX resumes and enqueues workflow jobs in Postgres.
+3. A coordinator worker claims queued jobs, upserts job metadata, creates a candidate for each uploaded resume, and opens a workflow run.
+4. The coordinator calls `resume-intake-agent`.
+5. The coordinator calls `screening-agent`.
+6. The coordinator calls `audit-agent`.
+7. The coordinator persists artifacts from each completed step in Postgres.
+8. The coordinator updates candidate scores, recommendation, and human-review state.
+9. The frontend reads jobs, candidates, stats, decision history, audit output, and live activity updates from coordinator APIs.
 
 Ranking exists as a separate service, but it is not part of the default intake -> screening -> audit pipeline. It is still triggered on demand through `POST /jobs/{job_id}/rank`.
 
@@ -216,7 +217,5 @@ There are unit tests for the coordinator, resume intake, screening, ranking, and
 
 ## Current Gaps
 
-- Ranking can overwrite candidate recommendation and status after the main workflow completes, but ranking artifacts are not persisted in Postgres.
-- The frontend includes a `deleteCandidate` API helper, but there is no matching coordinator delete endpoint yet.
-- There is no async queue or background worker orchestration yet; batch uploads and workflow execution still run synchronously.
+- The current queue worker runs inside the coordinator process rather than in a separate multi-process queue stack such as Redis/Celery.
 - Heuristic extraction and explanation quality still have room to improve.

@@ -5,7 +5,7 @@ from typing import Any
 from psycopg2.extras import Json, RealDictCursor
 
 from app.db import transaction
-from app.schemas import Artifact
+from app.schemas import Artifact, JobRequest
 
 
 class CoordinatorRepository:
@@ -164,6 +164,115 @@ class CoordinatorRepository:
                         artifact.created_at,
                     ),
                 )
+
+    def enqueue_workflow_job(
+        self,
+        *,
+        job_id: str,
+        filename: str,
+        request: JobRequest,
+    ) -> str:
+        with transaction() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO workflow_queue (
+                        job_id,
+                        filename,
+                        request_payload,
+                        status
+                    )
+                    VALUES (%s, %s, %s::jsonb, 'PENDING')
+                    RETURNING queue_id::text
+                    """,
+                    (job_id, filename, Json(request.model_dump())),
+                )
+                queue_id = cur.fetchone()[0]
+                return str(queue_id)
+
+    def claim_next_workflow_job(self) -> dict[str, Any] | None:
+        with transaction() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    WITH next_job AS (
+                        SELECT queue_id
+                        FROM workflow_queue
+                        WHERE status = 'PENDING'
+                        ORDER BY created_at ASC
+                        FOR UPDATE SKIP LOCKED
+                        LIMIT 1
+                    )
+                    UPDATE workflow_queue AS q
+                    SET
+                        status = 'RUNNING',
+                        attempt_count = q.attempt_count + 1,
+                        started_at = NOW(),
+                        last_error = NULL
+                    FROM next_job
+                    WHERE q.queue_id = next_job.queue_id
+                    RETURNING
+                        q.queue_id::text AS queue_id,
+                        q.job_id,
+                        q.filename,
+                        q.request_payload,
+                        q.attempt_count,
+                        q.created_at,
+                        q.started_at
+                    """
+                )
+                row = cur.fetchone()
+                return dict(row) if row else None
+
+    def mark_workflow_job_completed(self, *, queue_id: str) -> None:
+        with transaction() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE workflow_queue
+                    SET
+                        status = 'COMPLETED',
+                        finished_at = NOW()
+                    WHERE queue_id = %s::uuid
+                    """,
+                    (queue_id,),
+                )
+
+    def mark_workflow_job_failed(self, *, queue_id: str, error: str) -> None:
+        with transaction() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE workflow_queue
+                    SET
+                        status = 'FAILED',
+                        last_error = %s,
+                        finished_at = NOW()
+                    WHERE queue_id = %s::uuid
+                    """,
+                    (error, queue_id),
+                )
+
+    def get_workflow_queue_counts(self) -> dict[str, int]:
+        with transaction() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT
+                        COUNT(*) FILTER (WHERE status = 'PENDING')::int AS pending,
+                        COUNT(*) FILTER (WHERE status = 'RUNNING')::int AS running,
+                        COUNT(*) FILTER (WHERE status = 'FAILED')::int AS failed,
+                        COUNT(*) FILTER (WHERE status = 'COMPLETED')::int AS completed
+                    FROM workflow_queue
+                    """
+                )
+                row = cur.fetchone()
+                return dict(row) if row else {
+                    "pending": 0,
+                    "running": 0,
+                    "failed": 0,
+                    "completed": 0,
+                }
 
     def mark_workflow_failed(
         self,
@@ -356,6 +465,10 @@ class CoordinatorRepository:
                         qualification_score,
                         skills_score,
                         composite_score,
+                        rank_position,
+                        ranking_score,
+                        ranking_method,
+                        ranked_at,
                         needs_human_review,
                         review_status,
                         review_reasons,
@@ -364,9 +477,17 @@ class CoordinatorRepository:
                         updated_at
                     FROM candidates
                     WHERE (%s::text IS NULL OR job_id = %s)
-                    ORDER BY composite_score DESC NULLS LAST, created_at DESC
+                    ORDER BY
+                        CASE
+                            WHEN %s::text IS NULL THEN 0
+                            WHEN rank_position IS NULL THEN 1
+                            ELSE 0
+                        END,
+                        CASE WHEN %s::text IS NULL THEN NULL ELSE rank_position END ASC NULLS LAST,
+                        composite_score DESC NULLS LAST,
+                        created_at DESC
                     """,
-                    (job_id, job_id),
+                    (job_id, job_id, job_id, job_id),
                 )
                 return list(cur.fetchall())
 
@@ -387,6 +508,10 @@ class CoordinatorRepository:
                         qualification_score,
                         skills_score,
                         composite_score,
+                        rank_position,
+                        ranking_score,
+                        ranking_method,
+                        ranked_at,
                         needs_human_review,
                         review_status,
                         review_reasons,
@@ -484,17 +609,24 @@ class CoordinatorRepository:
                     "avg_score": 0,
                 }
 
-    def apply_candidate_ranking(self, *, job_id: str, ranked_candidates: list[dict[str, Any]]) -> int:
-        updates: list[tuple[float, str, str, str, str]] = []
-        for item in ranked_candidates:
+    def apply_candidate_ranking(
+        self,
+        *,
+        job_id: str,
+        ranked_candidates: list[dict[str, Any]],
+        ranking_method: str | None = None,
+        ranked_at: str | None = None,
+    ) -> int:
+        updates: list[tuple[int, float, str | None, str | None, str, str]] = []
+        for index, item in enumerate(ranked_candidates, start=1):
             candidate_id = item.get("candidate_id") or item.get("id")
             if not isinstance(candidate_id, str) or not candidate_id.strip():
                 continue
 
             score_value = item.get("score")
             score = float(score_value) if isinstance(score_value, (int, float)) else 0.0
-            recommendation, status = self._ranking_outcome(score)
-            updates.append((round(score, 4), recommendation, status, candidate_id, job_id))
+            method = item.get("method") if isinstance(item.get("method"), str) else ranking_method
+            updates.append((index, round(score, 4), method, ranked_at, candidate_id, job_id))
 
         if not updates:
             return 0
@@ -502,19 +634,20 @@ class CoordinatorRepository:
         with transaction() as conn:
             with conn.cursor() as cur:
                 updated = 0
-                for score, recommendation, status, candidate_id, entity_job_id in updates:
+                for rank_position, score, method, rank_timestamp, candidate_id, entity_job_id in updates:
                     cur.execute(
                         """
                         UPDATE candidates
                         SET
-                            composite_score = %s,
-                            recommendation = %s,
-                            status = %s,
+                            rank_position = %s,
+                            ranking_score = %s,
+                            ranking_method = %s,
+                            ranked_at = COALESCE(%s::timestamptz, NOW()),
                             updated_at = NOW()
                         WHERE candidate_id = %s::uuid
                           AND job_id = %s
                         """,
-                        (score, recommendation, status, candidate_id, entity_job_id),
+                        (rank_position, score, method, rank_timestamp, candidate_id, entity_job_id),
                     )
                     updated += cur.rowcount
 

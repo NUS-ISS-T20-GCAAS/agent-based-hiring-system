@@ -30,9 +30,8 @@ Already working:
 
 Current gaps:
 
-- ranking is manual-only and its artifact is not persisted in Postgres
-- there is no delete candidate endpoint even though the frontend API layer defines a helper for it
-- long-running uploads and workflow execution still run synchronously in the request/response path
+- ranking is manual-only and should remain a separate layer from screening/audit decisions
+- uploads now enqueue into a Postgres-backed worker, but there is not yet a separate multi-process queue stack such as Redis/Celery
 - heuristic extraction and explanations still have room to improve
 
 ## Package To Add
@@ -72,75 +71,58 @@ Best packages to prioritize:
 
 ## Recommended Order
 
-### 1. Move Long-Running Work Off The Request Path
+### 1. Demo Verification Pass
 
 Why first:
 
-- Large batch uploads can take long enough that synchronous request handling becomes brittle.
-- The longer proxy timeout helps, but it does not remove the architecture bottleneck.
+- The biggest demo-critical engineering gaps are now closed, so the next value is validating the whole story end to end.
 
 Implementation targets:
 
-- `services/coordinator-agent/app/routes.py`
-- `services/coordinator-agent/app/repository.py`
-- queue or worker infrastructure if introduced
+- composed local stack and deployed stack
+- representative TXT, PDF, and DOCX resumes
+- ranking, review-state, and live activity screens
 
 Acceptance criteria:
 
-- uploads and workflow execution no longer depend on one long HTTP request from the browser
+- upload queue drains correctly through the worker
+- live activity updates appear while queued workflows run
+- persisted artifacts and review state are visible in the UI
 
-### 2. Decide The Ranking Story
+### 2. Heuristic And Explanation Polish
 
 Why second:
 
-- Ranking exists, but it sits outside the main flow and updates candidate state after the fact.
-- That is workable for a demo, but the story should be explicit.
+- The baseline pipeline works, but fallback extraction and explanation quality can still look rough during demos.
 
 Implementation targets:
 
+- `services/resume-intake-agent/app/agent.py`
+- `services/screening-agent/app/agent.py`
+- `services/audit-agent/app/agent.py`
 - `services/coordinator-agent/app/routes.py`
-- `services/coordinator-agent/app/repository.py`
-- `services/ranking-agent/app/agent.py`
-- `services/coordinator-agent/tests/test_routes.py`
+- frontend explanation rendering components
 
 Acceptance criteria:
 
-- ranking behavior is consistent with the intended demo narrative
-- if ranking remains first-class, its outputs are persisted and explainable
+- extracted candidate profiles look more complete in fallback mode
+- explanations are easier to read in list/detail views
 
-### 3. Add Cleanup Paths
+### 3. Bigger Queue Upgrade
 
 Why third:
 
-- The frontend API layer already has a `deleteCandidate` helper.
-- There is no matching coordinator endpoint yet.
+- The current Postgres-backed worker is good for demo durability, but not the final scaling story.
 
 Implementation targets:
 
-- `services/coordinator-agent/app/routes.py`
-- `services/coordinator-agent/app/repository.py`
-- `frontend/src/services/api.js`
+- queue infrastructure package choice
+- coordinator worker deployment model
+- retry/dead-letter strategy
 
 Acceptance criteria:
 
-- candidate cleanup behavior is either implemented or removed from the frontend surface
-
-### 4. Demo Verification Pass
-
-Why fourth:
-
-- By this point the product story should be coherent enough to validate end to end.
-
-Minimum pass:
-
-- create a job using the metadata-only job form
-- upload TXT, PDF, and DOCX resumes
-- upload a larger batch of 5 to 8 PDFs without proxy timeout failures
-- verify at least one OpenAI-backed run if credentials are available
-- verify persisted intake, screening, and audit artifacts
-- verify ranking behavior for one job
-- verify review-required UI state
-- verify the live activity stream updates in the frontend
+- queue processing can survive coordinator restarts and scale beyond one in-process worker
 
 ## Good Next Work After Demo-Critical Items
 
