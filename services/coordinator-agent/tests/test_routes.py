@@ -14,6 +14,7 @@ from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
 from app.main import app
 from app.routes import (
     create_job,
+    delete_candidate,
     get_job_artifacts,
     list_jobs,
     get_job,
@@ -44,6 +45,8 @@ class FakeRepository:
     def __init__(self):
         self.applied_ranking = None
         self.upserted_job = None
+        self.saved_artifacts = []
+        self.deleted_candidate_id = None
 
     def upsert_job(self, **kwargs):
         self.upserted_job = kwargs
@@ -105,6 +108,8 @@ class FakeRepository:
         ]
 
     def get_candidate(self, *, candidate_id: str):
+        if candidate_id == self.deleted_candidate_id:
+            return None
         if candidate_id == "missing":
             return None
         return {
@@ -126,7 +131,7 @@ class FakeRepository:
         }
 
     def get_candidate_decisions(self, *, candidate_id: str):
-        return [
+        decisions = [
             {
                 "decision_id": "d-1",
                 "agent_id": "screening-agent",
@@ -136,9 +141,23 @@ class FakeRepository:
                 "created_at": "2026-03-12T12:00:00+00:00",
             }
         ]
+        for artifact in self.saved_artifacts:
+            if artifact["candidate_id"] != candidate_id:
+                continue
+            decisions.append(
+                {
+                    "decision_id": artifact["artifact_id"],
+                    "agent_id": artifact["agent_id"],
+                    "artifact_type": artifact["artifact_type"],
+                    "explanation": artifact["explanation"],
+                    "confidence": artifact["confidence"],
+                    "created_at": artifact["created_at"],
+                }
+            )
+        return decisions
 
     def list_artifacts(self, *, job_id=None):
-        return [
+        artifacts = [
             {
                 "artifact_id": "a-intake",
                 "entity_id": job_id or "job-1",
@@ -168,6 +187,11 @@ class FakeRepository:
                 "version": 1,
             },
         ]
+        for artifact in self.saved_artifacts:
+            if job_id is not None and artifact["entity_id"] != job_id:
+                continue
+            artifacts.append(artifact)
+        return artifacts
 
     def get_stats(self, *, job_id=None):
         return {
@@ -184,6 +208,31 @@ class FakeRepository:
             "ranked_candidates": ranked_candidates,
         }
         return len(ranked_candidates)
+
+    def save_artifact(self, *, job_id: str, candidate_id: str, artifact):
+        self.saved_artifacts.append(
+            {
+                "artifact_id": artifact.artifact_id,
+                "entity_id": job_id,
+                "candidate_id": candidate_id,
+                "correlation_id": artifact.correlation_id,
+                "agent_id": artifact.agent_id,
+                "agent_type": artifact.agent_type,
+                "artifact_type": artifact.artifact_type,
+                "payload": artifact.payload,
+                "confidence": artifact.confidence,
+                "explanation": artifact.explanation,
+                "created_at": artifact.created_at,
+                "version": artifact.version,
+            }
+        )
+        return None
+
+    def delete_candidate(self, *, candidate_id: str):
+        if candidate_id == "missing" or candidate_id == self.deleted_candidate_id:
+            return False
+        self.deleted_candidate_id = candidate_id
+        return True
 
 
 class FakeUploadFile:
@@ -372,7 +421,15 @@ class RoutesReadApiTests(unittest.TestCase):
         self.assertEqual(rank_result["ranked_candidates"], 1)
         self.assertEqual(repository.applied_ranking["job_id"], "job-1")
         self.assertEqual(repository.applied_ranking["ranked_candidates"][0]["candidate_id"], "c-1")
+        self.assertEqual(len(repository.saved_artifacts), 1)
+        self.assertEqual(repository.saved_artifacts[0]["artifact_type"], "candidate_ranking_result")
+        self.assertEqual(repository.saved_artifacts[0]["payload"]["rank"], 1)
+        self.assertEqual(repository.saved_artifacts[0]["payload"]["method"], "heuristic_composite_score")
         self.assertEqual(post_mock.call_count, 1)
+
+        decisions_after_rank = get_candidate_decisions("c-1")
+        self.assertEqual(len(decisions_after_rank), 2)
+        self.assertEqual(decisions_after_rank[1]["decision_type"], "candidate_ranking_result")
 
     @patch("app.routes.requests.post")
     @patch("app.routes.CoordinatorRepository")
@@ -409,6 +466,23 @@ class RoutesReadApiTests(unittest.TestCase):
         with self.assertRaises(HTTPException) as candidate_ctx:
             get_candidate("missing")
         self.assertEqual(candidate_ctx.exception.status_code, 404)
+
+    @patch("app.routes.emit_candidate_update")
+    @patch("app.routes.CoordinatorRepository")
+    def test_delete_candidate_route_removes_candidate_and_emits_update(self, repo_cls, emit_candidate_update_mock):
+        repository = FakeRepository()
+        repo_cls.return_value = repository
+
+        result = delete_candidate("c-1")
+
+        self.assertIsNone(result)
+        self.assertEqual(repository.deleted_candidate_id, "c-1")
+        emit_candidate_update_mock.assert_called_once_with(
+            job_id="job-1",
+            candidate_id="c-1",
+            status="deleted",
+        )
+        self.assertIsNone(repository.get_candidate(candidate_id="c-1"))
 
     @patch("app.routes.requests.post")
     @patch("app.routes.CoordinatorRepository")

@@ -1,8 +1,8 @@
 import React from 'react';
-import { Eye, RefreshCw, TrendingUp, FileText, AlertTriangle } from 'lucide-react';
+import { Eye, RefreshCw, TrendingUp, FileText, AlertTriangle, Trash2 } from 'lucide-react';
 import { getStatusColor, getRecommendationColor, formatPercent } from '../utils/helpers.js';
 
-const Candidates = ({ candidates, onViewDetails, onRefresh, onRankAll }) => {
+const Candidates = ({ candidates, onViewDetails, onRefresh, onRankAll, onDeleteCandidate }) => {
   const formatEscalationSource = (source) => {
     const labels = {
       screening: 'Screening',
@@ -96,14 +96,22 @@ const Candidates = ({ candidates, onViewDetails, onRefresh, onRankAll }) => {
                 </div>
               </div>
               
-              {/* View Details Button */}
-              <button
-                onClick={() => onViewDetails(candidate.id)}
-                className="flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-sm font-medium text-slate-700 transition-colors"
-              >
-                <Eye className="w-4 h-4" />
-                View Details
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => onViewDetails(candidate.id)}
+                  className="flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-sm font-medium text-slate-700 transition-colors"
+                >
+                  <Eye className="w-4 h-4" />
+                  View Details
+                </button>
+                <button
+                  onClick={() => onDeleteCandidate(candidate)}
+                  className="flex items-center gap-2 px-4 py-2 bg-red-50 hover:bg-red-100 rounded-lg text-sm font-medium text-red-700 transition-colors border border-red-200"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Delete
+                </button>
+              </div>
             </div>
 
             {/* Score Bars */}

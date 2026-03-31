@@ -401,6 +401,18 @@ class CoordinatorRepository:
                 row = cur.fetchone()
                 return dict(row) if row else None
 
+    def delete_candidate(self, *, candidate_id: str) -> bool:
+        with transaction() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    DELETE FROM candidates
+                    WHERE candidate_id = %s::uuid
+                    """,
+                    (candidate_id,),
+                )
+                return cur.rowcount > 0
+
     def get_candidate_decisions(self, *, candidate_id: str) -> list[dict[str, Any]]:
         with transaction() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:

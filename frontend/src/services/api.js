@@ -32,6 +32,15 @@ class ApiService {
         throw new Error(error.detail || `HTTP ${response.status}: ${response.statusText}`);
       }
 
+      if (response.status === 204) {
+        return null;
+      }
+
+      const contentType = response.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        return null;
+      }
+
       return await response.json();
     } catch (error) {
       console.error(`API Error [${endpoint}]:`, error);

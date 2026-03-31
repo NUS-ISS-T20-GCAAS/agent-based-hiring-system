@@ -1,13 +1,14 @@
 import React, { useEffect, useState } from 'react';
-import { X, CheckCircle, Loader, AlertTriangle } from 'lucide-react';
+import { X, CheckCircle, Loader, AlertTriangle, Trash2 } from 'lucide-react';
 import api from '../services/api.js';
 import { formatTime, formatPercent } from '../utils/helpers.js';
 
-const CandidateDetailModal = ({ candidateId, onClose }) => {
+const CandidateDetailModal = ({ candidateId, onClose, onDeleteCandidate }) => {
   const [candidate, setCandidate] = useState(null);
   const [decisions, setDecisions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const formatEscalationSource = (source) => {
     const labels = {
@@ -46,6 +47,17 @@ const CandidateDetailModal = ({ candidateId, onClose }) => {
     }
   };
 
+  const handleDelete = async () => {
+    if (!candidate || isDeleting) return;
+
+    setIsDeleting(true);
+    try {
+      await onDeleteCandidate(candidate);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   if (!candidateId) return null;
 
   return (
@@ -73,12 +85,28 @@ const CandidateDetailModal = ({ candidateId, onClose }) => {
             <div className="text-slate-600">Candidate Details</div>
           )}
           
-          <button
-            onClick={onClose}
-            className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
-          >
-            <X className="w-6 h-6 text-slate-600" />
-          </button>
+          <div className="flex items-center gap-2">
+            {candidate && !loading && (
+              <button
+                onClick={handleDelete}
+                disabled={isDeleting}
+                className="inline-flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700 transition-colors hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isDeleting ? (
+                  <Loader className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Trash2 className="w-4 h-4" />
+                )}
+                {isDeleting ? 'Deleting...' : 'Delete Candidate'}
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
+            >
+              <X className="w-6 h-6 text-slate-600" />
+            </button>
+          </div>
         </div>
 
         {/* Content */}

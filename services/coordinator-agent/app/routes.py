@@ -2,6 +2,7 @@ import re
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
+from http import HTTPStatus
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 import requests
 
@@ -175,6 +176,67 @@ def _artifact_payload(row: dict) -> dict:
     }
 
 
+def _build_ranking_candidate_artifacts(
+    *,
+    job_id: str,
+    ranking_artifact: Artifact,
+) -> list[tuple[str, Artifact]]:
+    payload = ranking_artifact.payload if isinstance(ranking_artifact.payload, dict) else {}
+    ranked_candidates = payload.get("ranked_candidates")
+    if not isinstance(ranked_candidates, list):
+        return []
+
+    details = payload.get("details") if isinstance(payload.get("details"), dict) else {}
+    method = details.get("method") or "heuristic_composite_score"
+    total_candidates = int(payload.get("total_candidates") or len(ranked_candidates) or 0)
+    top_candidate_id = payload.get("top_candidate_id")
+
+    artifacts: list[tuple[str, Artifact]] = []
+    for item in ranked_candidates:
+        if not isinstance(item, dict):
+            continue
+
+        candidate_id = item.get("candidate_id") or item.get("id")
+        if not isinstance(candidate_id, str) or not candidate_id.strip():
+            continue
+
+        rank = int(item.get("rank") or 0)
+        score = float(item.get("score") or 0.0)
+        candidate_name = item.get("name") or "Unknown Candidate"
+        recommendation = item.get("recommendation") or "PENDING"
+
+        candidate_artifact = Artifact(
+            artifact_id=str(uuid.uuid4()),
+            entity_id=job_id,
+            correlation_id=ranking_artifact.correlation_id,
+            agent_id=ranking_artifact.agent_id,
+            agent_type=ranking_artifact.agent_type,
+            artifact_type=ranking_artifact.artifact_type,
+            payload={
+                "job_id": job_id,
+                "candidate_id": candidate_id,
+                "candidate_name": candidate_name,
+                "rank": rank,
+                "score": score,
+                "scores": item.get("scores") if isinstance(item.get("scores"), dict) else {},
+                "recommendation": recommendation,
+                "method": method,
+                "top_candidate_id": top_candidate_id,
+                "total_candidates": total_candidates,
+            },
+            confidence=ranking_artifact.confidence,
+            explanation=(
+                f"Manual rerank placed {candidate_name} at #{rank} of {total_candidates} "
+                f"using {method} with score {score:.1%}"
+            ),
+            created_at=ranking_artifact.created_at,
+            version=ranking_artifact.version,
+        )
+        artifacts.append((candidate_id, candidate_artifact))
+
+    return artifacts
+
+
 def _job_or_404(repository: CoordinatorRepository, job_id: str) -> dict:
     row = repository.get_job(job_id=job_id)
     if not row:
@@ -256,6 +318,15 @@ def rank_job_candidates(job_id: str):
         job_id=job_id,
         ranked_candidates=payload.get("ranked_candidates") or [],
     )
+    for candidate_id, ranking_artifact in _build_ranking_candidate_artifacts(
+        job_id=job_id,
+        ranking_artifact=artifact,
+    ):
+        repository.save_artifact(
+            job_id=job_id,
+            candidate_id=candidate_id,
+            artifact=ranking_artifact,
+        )
     emit_agent_activity(
         agent="ranking",
         message=f"Re-ranked {ranked} candidates for job {job_id}",
@@ -384,6 +455,24 @@ def get_candidate(candidate_id: str):
     if not row:
         raise HTTPException(status_code=404, detail="candidate not found")
     return _candidate_payload(row)
+
+
+@router.delete("/candidates/{candidate_id}", status_code=HTTPStatus.NO_CONTENT)
+def delete_candidate(candidate_id: str):
+    repository = CoordinatorRepository()
+    row = repository.get_candidate(candidate_id=candidate_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="candidate not found")
+
+    deleted = repository.delete_candidate(candidate_id=candidate_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="candidate not found")
+
+    emit_candidate_update(
+        job_id=row.get("job_id"),
+        candidate_id=candidate_id,
+        status="deleted",
+    )
 
 
 @router.get("/candidates/{candidate_id}/decisions")

@@ -190,6 +190,25 @@ function App() {
     setSelectedCandidate(candidateId);
   };
 
+  const handleDeleteCandidate = async (candidate) => {
+    if (!candidate?.id) return;
+
+    const candidateName = candidate.name || 'this candidate';
+    const confirmed = window.confirm(`Delete ${candidateName}? This action cannot be undone.`);
+    if (!confirmed) return;
+
+    try {
+      await api.deleteCandidate(candidate.id);
+      if (selectedCandidate === candidate.id) {
+        setSelectedCandidate(null);
+      }
+      await Promise.all([fetchCandidates(), fetchStats(), fetchJobs()]);
+    } catch (error) {
+      console.error('Error deleting candidate:', error);
+      alert('Delete failed: ' + error.message);
+    }
+  };
+
   const handleCloseModal = () => {
     setSelectedCandidate(null);
   };
@@ -293,6 +312,7 @@ function App() {
             onViewDetails={handleViewDetails}
             onRefresh={fetchCandidates}
             onRankAll={handleRankCandidates}
+            onDeleteCandidate={handleDeleteCandidate}
           />
         )}
 
@@ -309,6 +329,7 @@ function App() {
         <CandidateDetailModal
           candidateId={selectedCandidate}
           onClose={handleCloseModal}
+          onDeleteCandidate={handleDeleteCandidate}
         />
       )}
     </div>
