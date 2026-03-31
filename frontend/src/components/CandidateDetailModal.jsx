@@ -21,6 +21,8 @@ const CandidateDetailModal = ({ candidateId, onClose, onDeleteCandidate }) => {
     return labels[source] || 'Review';
   };
 
+  const isCandidateProfileLoading = (value) => (value || '').trim().toLowerCase() === 'unknown candidate';
+
   useEffect(() => {
     if (candidateId) {
       fetchCandidateDetails();
@@ -78,8 +80,18 @@ const CandidateDetailModal = ({ candidateId, onClose, onDeleteCandidate }) => {
             </div>
           ) : candidate ? (
             <div>
-              <h2 className="text-2xl font-bold text-slate-900">{candidate.name}</h2>
-              <p className="text-slate-600">{candidate.email}</p>
+              {isCandidateProfileLoading(candidate.name) ? (
+                <div className="space-y-2">
+                  <div className="h-8 w-56 animate-pulse rounded bg-slate-200" />
+                  <div className="h-4 w-36 animate-pulse rounded bg-slate-100" />
+                  <p className="text-sm font-medium text-blue-600">Building candidate profile...</p>
+                </div>
+              ) : (
+                <>
+                  <h2 className="text-2xl font-bold text-slate-900">{candidate.name}</h2>
+                  <p className="text-slate-600">{candidate.email}</p>
+                </>
+              )}
             </div>
           ) : (
             <div className="text-slate-600">Candidate Details</div>

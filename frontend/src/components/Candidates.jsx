@@ -1,8 +1,20 @@
 import React from 'react';
-import { Eye, RefreshCw, TrendingUp, FileText, AlertTriangle, Trash2 } from 'lucide-react';
+import { Eye, RefreshCw, TrendingUp, FileText, AlertTriangle, Trash2, Loader } from 'lucide-react';
 import { getStatusColor, getRecommendationColor, formatPercent } from '../utils/helpers.js';
 
-const Candidates = ({ candidates, onViewDetails, onRefresh, onRankAll, onDeleteCandidate }) => {
+const Candidates = ({
+  candidates,
+  onViewDetails,
+  onRefresh,
+  onRankAll,
+  onDeleteCandidate,
+  queuedUploadsCount,
+  processingCandidatesCount,
+  isRunning,
+  latestActivityMessage,
+}) => {
+  const isCandidateProfileLoading = (candidate) => (candidate?.name || '').trim().toLowerCase() === 'unknown candidate';
+
   const formatEscalationSource = (source) => {
     const labels = {
       screening: 'Screening',
@@ -14,7 +26,7 @@ const Candidates = ({ candidates, onViewDetails, onRefresh, onRankAll, onDeleteC
     return labels[source] || 'Review';
   };
 
-  if (candidates.length === 0) {
+  if (candidates.length === 0 && !isRunning) {
     return (
       <div className="space-y-6">
         <div className="flex items-center justify-between">
@@ -32,6 +44,34 @@ const Candidates = ({ candidates, onViewDetails, onRefresh, onRankAll, onDeleteC
 
   return (
     <div className="space-y-6">
+      {isRunning && (
+        <div className="rounded-2xl border border-blue-200 bg-gradient-to-r from-blue-50 to-cyan-50 p-5 shadow-sm">
+          <div className="flex items-start gap-4">
+            <div className="rounded-full bg-white p-3 shadow-sm">
+              <Loader className="w-5 h-5 text-blue-600 animate-spin" />
+            </div>
+            <div className="flex-1">
+              <h3 className="text-lg font-bold text-slate-900">Job Processing In Progress</h3>
+              <p className="mt-1 text-sm text-slate-700">
+                {queuedUploadsCount > 0 && processingCandidatesCount > 0
+                  ? `${queuedUploadsCount} upload${queuedUploadsCount === 1 ? '' : 's'} queued and ${processingCandidatesCount} candidate${processingCandidatesCount === 1 ? '' : 's'} currently processing.`
+                  : queuedUploadsCount > 0
+                    ? `${queuedUploadsCount} upload${queuedUploadsCount === 1 ? '' : 's'} queued. Candidate records will appear here shortly.`
+                    : `${processingCandidatesCount} candidate${processingCandidatesCount === 1 ? '' : 's'} currently processing through the workflow.`}
+              </p>
+              <p className="mt-2 text-sm text-slate-600">
+                This page updates automatically as intake, screening, and audit complete.
+              </p>
+              {latestActivityMessage && (
+                <p className="mt-3 rounded-lg bg-white/80 px-3 py-2 text-sm text-slate-700 border border-blue-100">
+                  Latest update: {latestActivityMessage}
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -58,7 +98,15 @@ const Candidates = ({ candidates, onViewDetails, onRefresh, onRankAll, onDeleteC
         </div>
       </div>
 
-      {/* Candidates List */}
+      {candidates.length === 0 ? (
+        <div className="bg-white rounded-xl shadow-sm border border-blue-100 p-12 text-center">
+          <Loader className="w-16 h-16 text-blue-400 mx-auto mb-4 animate-spin" />
+          <h3 className="text-lg font-semibold text-slate-900 mb-2">Waiting for candidate records</h3>
+          <p className="text-slate-600">
+            Uploaded resumes have been accepted and are being processed in the background.
+          </p>
+        </div>
+      ) : (
       <div className="space-y-4">
         {candidates.map((candidate, index) => (
           <div 
@@ -75,8 +123,20 @@ const Candidates = ({ candidates, onViewDetails, onRefresh, onRankAll, onDeleteC
                 
                 {/* Candidate Info */}
                 <div>
-                  <h3 className="text-lg font-bold text-slate-900">{candidate.name}</h3>
-                  <p className="text-sm text-slate-600">{candidate.email}</p>
+                  {isCandidateProfileLoading(candidate) ? (
+                    <div className="space-y-2">
+                      <div className="h-6 w-44 animate-pulse rounded bg-slate-200" />
+                      <div className="h-4 w-32 animate-pulse rounded bg-slate-100" />
+                      <p className="text-xs font-medium uppercase tracking-wide text-blue-600">
+                        Building candidate profile...
+                      </p>
+                    </div>
+                  ) : (
+                    <>
+                      <h3 className="text-lg font-bold text-slate-900">{candidate.name}</h3>
+                      <p className="text-sm text-slate-600">{candidate.email}</p>
+                    </>
+                  )}
                   
                   {/* Status Badges */}
                   <div className="flex items-center gap-2 mt-2">
@@ -203,6 +263,7 @@ const Candidates = ({ candidates, onViewDetails, onRefresh, onRankAll, onDeleteC
           </div>
         ))}
       </div>
+      )}
     </div>
   );
 };

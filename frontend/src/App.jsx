@@ -27,9 +27,11 @@ function App() {
     pass_rate: 0
   });
   const [isConnected, setIsConnected] = useState(false);
+  const [jobRunState, setJobRunState] = useState({});
   
   const wsRef = useRef(null);
   const fileInputRef = useRef(null);
+  const selectedJobRef = useRef(null);
 
   // Initialize on mount
   useEffect(() => {
@@ -45,6 +47,7 @@ function App() {
 
   // Fetch candidates and stats when job changes
   useEffect(() => {
+    selectedJobRef.current = selectedJob;
     if (selectedJob) {
       fetchCandidates();
       fetchStats();
@@ -67,9 +70,52 @@ function App() {
           
           if (message.type === 'agent_activity') {
             setAgentActivity(prev => [message.data, ...prev.slice(0, 49)]);
+            const { entity_id: jobId, message: activityMessage, timestamp } = message.data || {};
+            if (jobId) {
+              setJobRunState((prev) => {
+                const current = prev[jobId] || {};
+                let queuedUploads = current.queuedUploads || 0;
+                if (typeof activityMessage === 'string' && activityMessage.startsWith('Queued upload failed') && queuedUploads > 0) {
+                  queuedUploads -= 1;
+                }
+
+                return {
+                  ...prev,
+                  [jobId]: {
+                    ...current,
+                    queuedUploads,
+                    lastActivityMessage: activityMessage || current.lastActivityMessage,
+                    lastUpdatedAt: timestamp || new Date().toISOString(),
+                  },
+                };
+              });
+            }
           } else if (message.type === 'candidate_update') {
-            fetchCandidates();
-            fetchStats();
+            const { job_id: jobId, status } = message.data || {};
+            if (jobId) {
+              setJobRunState((prev) => {
+                const current = prev[jobId];
+                if (!current) return prev;
+
+                let queuedUploads = current.queuedUploads || 0;
+                if (status === 'processing' && queuedUploads > 0) {
+                  queuedUploads -= 1;
+                }
+
+                return {
+                  ...prev,
+                  [jobId]: {
+                    ...current,
+                    queuedUploads,
+                    lastEventStatus: status || current.lastEventStatus,
+                    lastUpdatedAt: new Date().toISOString(),
+                  },
+                };
+              });
+            }
+            fetchCandidates(jobId);
+            fetchStats(jobId);
+            fetchJobs();
           }
         } catch (err) {
           console.error('WebSocket message error:', err);
@@ -110,23 +156,27 @@ function App() {
     }
   };
 
-  const fetchCandidates = async () => {
-    if (!selectedJob) return;
+  const fetchCandidates = async (jobId = selectedJob) => {
+    if (!jobId) return;
     
     try {
-      const data = await api.getCandidates(selectedJob);
-      setCandidates(data);
+      const data = await api.getCandidates(jobId);
+      if (jobId === selectedJobRef.current) {
+        setCandidates(data);
+      }
     } catch (error) {
       console.error('Error fetching candidates:', error);
     }
   };
 
-  const fetchStats = async () => {
-    if (!selectedJob) return;
+  const fetchStats = async (jobId = selectedJob) => {
+    if (!jobId) return;
     
     try {
-      const data = await api.getStats(selectedJob);
-      setStats(data);
+      const data = await api.getStats(jobId);
+      if (jobId === selectedJobRef.current) {
+        setStats(data);
+      }
     } catch (error) {
       console.error('Error fetching stats:', error);
     }
@@ -154,19 +204,26 @@ function App() {
     
     try {
       const filesArray = Array.from(files);
-      await api.uploadResumes(filesArray, selectedJob);
-      
-      // Wait a bit for processing to complete
-      setTimeout(async () => {
-        await fetchCandidates();
-        await fetchStats();
-        setProcessing(false);
-        setActiveTab('candidates');
-      }, 3000);
-      
+      const result = await api.uploadResumes(filesArray, selectedJob);
+      setJobRunState((prev) => ({
+        ...prev,
+        [selectedJob]: {
+          queuedUploads: (prev[selectedJob]?.queuedUploads || 0) + (result?.queued || 0),
+          lastQueuedAt: new Date().toISOString(),
+          lastSubmittedFiles: result?.results?.map((item) => item.file).filter(Boolean) || [],
+          lastActivityMessage: `Queued ${result?.queued || 0} upload${(result?.queued || 0) === 1 ? '' : 's'} for processing`,
+        },
+      }));
+      await Promise.all([fetchCandidates(), fetchStats()]);
+      setActiveTab('candidates');
+
+      if ((result?.failed || 0) > 0) {
+        alert(`Queued ${result.queued || 0} file(s). ${result.failed} file(s) failed validation.`);
+      }
     } catch (error) {
       console.error('Error uploading files:', error);
       alert('Upload failed: ' + error.message);
+    } finally {
       setProcessing(false);
     }
   };
@@ -216,6 +273,21 @@ function App() {
   const handleClearActivity = () => {
     setAgentActivity([]);
   };
+
+  const selectedJobRecord = jobs.find((job) => job.job_id === selectedJob) || null;
+  const selectedJobRunState = selectedJob ? (jobRunState[selectedJob] || null) : null;
+  const processingCandidatesCount = candidates.filter(
+    (candidate) => candidate.status?.toLowerCase() === 'processing'
+  ).length;
+  const queuedUploadsCount = selectedJobRunState?.queuedUploads || 0;
+  const hasUploadActivity = Boolean(
+    selectedJobRunState?.lastQueuedAt || selectedJobRunState?.lastSubmittedFiles?.length
+  );
+  const selectedJobIsRunning = hasUploadActivity && (
+    queuedUploadsCount > 0 ||
+    processingCandidatesCount > 0 ||
+    (selectedJobRecord?.status || '').toLowerCase() === 'processing'
+  );
 
   // Tab navigation
   const tabs = [
@@ -301,7 +373,7 @@ function App() {
             onJobSelect={setSelectedJob}
             onCreateJob={handleCreateJob}
             onUploadFiles={handleUploadFiles}
-            processing={processing}
+            processing={processing || selectedJobIsRunning}
             fileInputRef={fileInputRef}
           />
         )}
@@ -313,6 +385,10 @@ function App() {
             onRefresh={fetchCandidates}
             onRankAll={handleRankCandidates}
             onDeleteCandidate={handleDeleteCandidate}
+            queuedUploadsCount={queuedUploadsCount}
+            processingCandidatesCount={processingCandidatesCount}
+            isRunning={selectedJobIsRunning}
+            latestActivityMessage={selectedJobRunState?.lastActivityMessage || null}
           />
         )}
 

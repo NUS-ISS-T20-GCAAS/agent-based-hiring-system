@@ -3,7 +3,7 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 from http import HTTPStatus
-from fastapi import APIRouter, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, BackgroundTasks, File, HTTPException, Query, UploadFile
 import requests
 
 from app.schemas import Artifact, CreateJobRequest, CreateJobResponse, JobRequest, JobResponse, RunRequest
@@ -237,6 +237,67 @@ def _build_ranking_candidate_artifacts(
     return artifacts
 
 
+def _build_upload_job_request(
+    *,
+    job_id: str,
+    filename: str,
+    content_type: str | None,
+    raw: bytes,
+    job_description: str,
+    job_requirements: dict,
+) -> JobRequest:
+    resume_text = extract_resume_text(
+        filename=filename,
+        content_type=content_type,
+        raw=raw,
+    )
+    return JobRequest(
+        job_id=job_id,
+        resume_url=f"upload://{filename}",
+        resume_text=resume_text,
+        job_description=job_description,
+        required_skills=job_requirements["required_skills"],
+        preferred_skills=job_requirements["preferred_skills"],
+        min_years_experience=job_requirements["min_years_experience"],
+        education_level=job_requirements["education_level"],
+    )
+
+
+def _run_upload_workflow_in_background(*, request: JobRequest, filename: str) -> None:
+    try:
+        emit_agent_activity(
+            agent="coordinator",
+            message=f"Processing queued upload for {filename}",
+            entity_id=request.job_id,
+        )
+        run_job(request)
+    except HTTPException as exc:
+        detail = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
+        logger.error(
+            "background_upload_workflow_failed",
+            entity_id=request.job_id,
+            filename=filename,
+            error=detail,
+        )
+        emit_agent_activity(
+            agent="coordinator",
+            message=f"Queued upload failed for {filename}: {detail}",
+            entity_id=request.job_id,
+        )
+    except Exception as exc:
+        logger.error(
+            "background_upload_workflow_failed",
+            entity_id=request.job_id,
+            filename=filename,
+            error=str(exc),
+        )
+        emit_agent_activity(
+            agent="coordinator",
+            message=f"Queued upload failed for {filename}: {exc}",
+            entity_id=request.job_id,
+        )
+
+
 def _job_or_404(repository: CoordinatorRepository, job_id: str) -> dict:
     row = repository.get_job(job_id=job_id)
     if not row:
@@ -357,6 +418,7 @@ def list_candidates(job_id: str | None = Query(default=None)):
 async def _process_upload_files(
     *,
     repository: CoordinatorRepository,
+    background_tasks: BackgroundTasks,
     job_id: str,
     files: list[UploadFile],
 ) -> dict:
@@ -371,23 +433,32 @@ async def _process_upload_files(
         filename = upload.filename or "resume.txt"
         try:
             content = await upload.read()
-            resume_text = extract_resume_text(
+            request = _build_upload_job_request(
+                job_id=job_id,
                 filename=filename,
                 content_type=getattr(upload, "content_type", None),
                 raw=content,
-            )
-            request = JobRequest(
-                job_id=job_id,
-                resume_url=f"upload://{filename}",
-                resume_text=resume_text,
                 job_description=job_description,
-                required_skills=job_requirements["required_skills"],
-                preferred_skills=job_requirements["preferred_skills"],
-                min_years_experience=job_requirements["min_years_experience"],
-                education_level=job_requirements["education_level"],
+                job_requirements=job_requirements,
             )
-            job_response = run_job(request)
-            results.append(job_response.model_dump())
+            background_tasks.add_task(
+                _run_upload_workflow_in_background,
+                request=request,
+                filename=filename,
+            )
+            emit_agent_activity(
+                agent="coordinator",
+                message=f"Queued upload workflow for {filename}",
+                entity_id=job_id,
+            )
+            results.append(
+                {
+                    "file": filename,
+                    "status": "queued",
+                    "job_id": job_id,
+                    "resume_url": request.resume_url,
+                }
+            )
         except ResumeParsingError as exc:
             errors.append(
                 {
@@ -417,33 +488,48 @@ async def _process_upload_files(
 
     return {
         "job_id": job_id,
-        "processed": len(results),
+        "queued": len(results),
         "failed": len(errors),
         "results": results,
         "errors": errors,
+        "status": "accepted" if results else "rejected",
     }
 
 
-@router.post("/candidates/upload")
-async def upload_candidate(job_id: str = Query(...), file: UploadFile = File(...)):
+@router.post("/candidates/upload", status_code=HTTPStatus.ACCEPTED)
+async def upload_candidate(
+    background_tasks: BackgroundTasks,
+    job_id: str = Query(...),
+    file: UploadFile = File(...),
+):
     repository = CoordinatorRepository()
-    result = await _process_upload_files(repository=repository, job_id=job_id, files=[file])
+    result = await _process_upload_files(
+        repository=repository,
+        background_tasks=background_tasks,
+        job_id=job_id,
+        files=[file],
+    )
 
-    if result["processed"] == 0:
+    if result["queued"] == 0:
         first_error = result["errors"][0] if result["errors"] else {"detail": "upload failed", "status_code": 500}
         raise HTTPException(status_code=first_error["status_code"], detail=first_error["detail"])
 
-    return result["results"][0]
+    return result
 
 
-@router.post("/candidates/batch-upload")
-async def upload_candidates(job_id: str = Query(...), files: list[UploadFile] = File(...)):
+@router.post("/candidates/batch-upload", status_code=HTTPStatus.ACCEPTED)
+async def upload_candidates(
+    background_tasks: BackgroundTasks,
+    job_id: str = Query(...),
+    files: list[UploadFile] = File(...),
+):
     repository = CoordinatorRepository()
-    result = await _process_upload_files(repository=repository, job_id=job_id, files=files)
-
-    if result["processed"] == 0:
-        first_error = result["errors"][0] if result["errors"] else {"detail": "batch upload failed", "status_code": 500}
-        raise HTTPException(status_code=first_error["status_code"], detail=first_error["detail"])
+    result = await _process_upload_files(
+        repository=repository,
+        background_tasks=background_tasks,
+        job_id=job_id,
+        files=files,
+    )
 
     return result
 

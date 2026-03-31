@@ -5,7 +5,7 @@ from typing import Optional
 from unittest.mock import patch
 
 import requests
-from fastapi import HTTPException
+from fastapi import BackgroundTasks, HTTPException
 from fastapi.testclient import TestClient
 from docx import Document
 from pypdf import PdfWriter
@@ -527,34 +527,30 @@ class RoutesReadApiTests(unittest.TestCase):
     @patch("app.routes.CoordinatorRepository")
     def test_batch_upload_route(self, repo_cls, run_job_mock):
         repo_cls.return_value = FakeRepository()
-        run_job_mock.return_value = type(
-            "JobResponseObj",
-            (),
-            {"model_dump": lambda self: {"job_id": "job-1", "status": "completed", "artifact_id": "a-1"}},
-        )()
+        background_tasks = BackgroundTasks()
 
         files = [
             FakeUploadFile("a.txt", b"Python FastAPI engineer", "text/plain"),
             FakeUploadFile("b.txt", b"SQL and AWS", "text/plain"),
         ]
 
-        result = asyncio.run(upload_candidates(job_id="job-1", files=files))
-        self.assertEqual(result["processed"], 2)
+        result = asyncio.run(upload_candidates(background_tasks=background_tasks, job_id="job-1", files=files))
+        self.assertEqual(result["queued"], 2)
         self.assertEqual(result["failed"], 0)
-        first_request = run_job_mock.call_args_list[0].args[0]
+        self.assertEqual(result["status"], "accepted")
+        self.assertEqual(len(background_tasks.tasks), 2)
+        self.assertEqual(run_job_mock.call_count, 0)
+        first_request = background_tasks.tasks[0].kwargs["request"]
         self.assertEqual(first_request.required_skills, ["python", "fastapi"])
         self.assertEqual(first_request.preferred_skills, ["docker"])
         self.assertEqual(first_request.min_years_experience, 3)
+        self.assertEqual(result["results"][0]["status"], "queued")
 
     @patch("app.routes.run_job")
     @patch("app.routes.CoordinatorRepository")
     def test_batch_upload_route_extracts_txt_pdf_and_docx(self, repo_cls, run_job_mock):
         repo_cls.return_value = FakeRepository()
-        run_job_mock.return_value = type(
-            "JobResponseObj",
-            (),
-            {"model_dump": lambda self: {"job_id": "job-1", "status": "completed", "artifact_id": "a-1"}},
-        )()
+        background_tasks = BackgroundTasks()
 
         files = [
             FakeUploadFile("resume.txt", b"Senior Python engineer", "text/plain"),
@@ -566,14 +562,15 @@ class RoutesReadApiTests(unittest.TestCase):
             ),
         ]
 
-        result = asyncio.run(upload_candidates(job_id="job-1", files=files))
+        result = asyncio.run(upload_candidates(background_tasks=background_tasks, job_id="job-1", files=files))
 
-        self.assertEqual(result["processed"], 3)
+        self.assertEqual(result["queued"], 3)
         self.assertEqual(result["failed"], 0)
-        self.assertEqual(len(run_job_mock.call_args_list), 3)
-        self.assertEqual(run_job_mock.call_args_list[0].args[0].resume_text, "Senior Python engineer")
-        self.assertIn("PDF Resume Text", run_job_mock.call_args_list[1].args[0].resume_text)
-        self.assertIn("DOCX Resume Text", run_job_mock.call_args_list[2].args[0].resume_text)
+        self.assertEqual(len(background_tasks.tasks), 3)
+        self.assertEqual(run_job_mock.call_count, 0)
+        self.assertEqual(background_tasks.tasks[0].kwargs["request"].resume_text, "Senior Python engineer")
+        self.assertIn("PDF Resume Text", background_tasks.tasks[1].kwargs["request"].resume_text)
+        self.assertIn("DOCX Resume Text", background_tasks.tasks[2].kwargs["request"].resume_text)
 
     @patch("app.routes.run_job")
     @patch("app.routes.CoordinatorRepository")
@@ -583,6 +580,7 @@ class RoutesReadApiTests(unittest.TestCase):
         with self.assertRaises(HTTPException) as ctx:
             asyncio.run(
                 upload_candidate(
+                    background_tasks=BackgroundTasks(),
                     job_id="job-1",
                     file=FakeUploadFile("resume.png", b"binary", "image/png"),
                 )
@@ -596,20 +594,23 @@ class RoutesReadApiTests(unittest.TestCase):
     @patch("app.routes.CoordinatorRepository")
     def test_batch_upload_reports_empty_and_corrupt_documents(self, repo_cls, run_job_mock):
         repo_cls.return_value = FakeRepository()
+        background_tasks = BackgroundTasks()
 
         files = [
             FakeUploadFile("empty.txt", b"", "text/plain"),
             FakeUploadFile("broken.pdf", b"%PDF-1.4 broken", "application/pdf"),
         ]
 
-        result = asyncio.run(upload_candidates(job_id="job-1", files=files))
+        result = asyncio.run(upload_candidates(background_tasks=background_tasks, job_id="job-1", files=files))
 
-        self.assertEqual(result["processed"], 0)
+        self.assertEqual(result["queued"], 0)
         self.assertEqual(result["failed"], 2)
+        self.assertEqual(result["status"], "rejected")
         self.assertEqual(result["errors"][0]["file"], "empty.txt")
         self.assertIn("empty", result["errors"][0]["detail"].lower())
         self.assertEqual(result["errors"][1]["file"], "broken.pdf")
         self.assertIn("failed to extract text from pdf resume", result["errors"][1]["detail"].lower())
+        self.assertEqual(len(background_tasks.tasks), 0)
         self.assertEqual(run_job_mock.call_count, 0)
 
 
