@@ -35,6 +35,41 @@ Current gaps:
 - long-running uploads and workflow execution still run synchronously in the request/response path
 - heuristic extraction and explanations still have room to improve
 
+## Package To Add
+
+Recommended shortlist, ranked by expected project value:
+
+1. `langgraph`
+   Best fit for showing real multi-agent orchestration, stateful workflows, checkpoints, and human-in-the-loop design.
+
+2. `redis` + `celery`
+   Best fit for solving the current synchronous upload bottleneck through background jobs, task queues, and lightweight caching.
+
+3. `langfuse`
+   Best fit for demo and report visibility through tracing, prompt/version tracking, and LLM observability.
+
+4. `langchain`
+   Strong ecosystem choice for prompts, retrievers, document processing, tools, and integration glue if the project needs a broader LLM framework.
+
+5. `instructor`
+   High practical value for structured resume extraction into validated Pydantic models with cleaner OpenAI response handling.
+
+6. `qdrant-client`
+   Useful if semantic search or vector-based resume-to-job matching is added later.
+
+7. `guardrails-ai`
+   Useful for output validation, safety constraints, and stronger governance around generated screening or extraction results.
+
+8. `pydantic-ai`
+   Good Python-native option for typed agent workflows if the team prefers a lighter abstraction than LangChain.
+
+Best packages to prioritize:
+
+- easiest practical win: `instructor`
+- most impressive for demo/story: `langgraph`
+- best architectural fix for the current system: `redis` + `celery`
+- best visibility and evaluation add-on: `langfuse`
+
 ## Recommended Order
 
 ### 1. Move Long-Running Work Off The Request Path
