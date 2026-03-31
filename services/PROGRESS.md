@@ -2,7 +2,7 @@
 **Project:** Agent-Based Hiring System for Scalable and Explainable Resume Screening
 **Team:** Team 20
 **Module:** GC Architecting AI Systems - Practice
-**Last Updated:** 2026-03-29
+**Last Updated:** 2026-03-31
 
 ---
 
@@ -23,6 +23,8 @@ The default persisted workflow is:
 - screening
 - audit
 - candidate persistence and review-state update
+
+Job creation is now separated from workflow execution through a metadata-only `POST /jobs/create` path, and the frontend uses a real job-creation modal rather than a sample-job shortcut.
 
 Ranking is implemented as a standalone manual step rather than part of the default pipeline.
 
@@ -67,6 +69,7 @@ OpenAI model hooks exist for resume intake, screening, and audit. Real model-bac
 - [x] `resume-intake -> screening -> audit` orchestration
 - [x] Workflow bootstrap and completion tracking
 - [x] Candidate record creation during processing
+- [x] Metadata-only job creation via `POST /jobs/create`
 - [x] Artifact persistence for intake, screening, and audit
 - [x] Coordinator-level human review state derived from screening and audit
 - [x] Review-required state exposed through candidate read APIs
@@ -88,6 +91,7 @@ OpenAI model hooks exist for resume intake, screening, and audit. Real model-bac
 
 ### Frontend-Facing APIs
 - [x] `POST /jobs`
+- [x] `POST /jobs/create`
 - [x] `GET /jobs`
 - [x] `GET /jobs/{job_id}`
 - [x] `POST /jobs/{job_id}/rank`
@@ -132,18 +136,17 @@ OpenAI model hooks exist for resume intake, screening, and audit. Real model-bac
 
 ## Phase 4 - Demo-Critical Work (NEXT)
 
-- [ ] Clarify or redesign the frontend job-creation flow so `POST /jobs` is not used as a fake sample-job creator
 - [ ] Decide whether ranking should be manual-only or part of the main workflow
 - [ ] Persist ranking artifacts if ranking remains a first-class step
-- [ ] Add a real backend event stream or remove the frontend WebSocket expectation
+- [ ] Add delete candidate endpoint and cleanup flow, or remove the unused frontend helper
+- [ ] Move long-running uploads/workflows to background jobs or queue-based orchestration
 - [ ] Run a demo-readiness verification pass against the composed stack
 
 ## Phase 5 - Remaining Nice-To-Haves
 
-- [ ] Add a delete candidate endpoint and cleanup flow
-- [ ] Add async queue or event-driven execution if scale requires it
+- [ ] Improve heuristic extraction and explanations where still weak
 - [ ] Expand dashboard support for richer fairness and workflow metrics
-- [ ] Improve heuristic quality for ranking, screening, and resume extraction
+- [ ] Add async queue or event-driven execution if scale requires it
 
 ---
 
@@ -152,4 +155,6 @@ OpenAI model hooks exist for resume intake, screening, and audit. Real model-bac
 - PDF and DOCX extraction are now implemented in the coordinator via `pypdf` and `python-docx`.
 - Screening review flags and audit review flags are already combined into coordinator-level candidate review state.
 - The frontend shows review state in list and detail views.
-- The frontend still expects a WebSocket endpoint at `/ws`, but that endpoint does not exist in the current backend.
+- The coordinator exposes a live WebSocket endpoint at `/ws` and broadcasts agent activity and candidate updates through a shared event hub.
+- The frontend connects to that live activity stream.
+- Batch upload requests can take longer for larger resume sets, so the frontend proxy timeout and body-size limits were increased to avoid premature 504s during long-running uploads.

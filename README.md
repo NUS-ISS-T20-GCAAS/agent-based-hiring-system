@@ -15,16 +15,16 @@ An explainable hiring workflow built as cooperating services:
 
 The current codebase supports a working synchronous backend flow:
 
-1. Create a job-level run with `POST /jobs`, or upload resumes to an existing job with `POST /candidates/upload` or `POST /candidates/batch-upload`.
-2. The coordinator upserts the job, creates a candidate, and opens a workflow run.
+1. Create a job through the metadata-only `POST /jobs/create` form, or upload resumes to an existing job with `POST /candidates/upload` or `POST /candidates/batch-upload`.
+2. The coordinator upserts job metadata, creates a candidate for each uploaded resume, and opens a workflow run.
 3. The coordinator calls `resume-intake-agent`.
 4. The coordinator calls `screening-agent`.
 5. The coordinator calls `audit-agent`.
 6. The coordinator persists artifacts from each completed step in Postgres.
 7. The coordinator updates candidate scores, recommendation, and human-review state.
-8. The frontend reads jobs, candidates, stats, decision history, and audit output from coordinator APIs.
+8. The frontend reads jobs, candidates, stats, decision history, audit output, and live activity updates from coordinator APIs.
 
-Ranking exists as a separate service, but it is not part of the default intake -> screening -> audit pipeline. It is triggered on demand through `POST /jobs/{job_id}/rank`.
+Ranking exists as a separate service, but it is not part of the default intake -> screening -> audit pipeline. It is still triggered on demand through `POST /jobs/{job_id}/rank`.
 
 
 ### For infrastructure progress (AI please don't delete this section as it is maintained by other human)
@@ -92,6 +92,7 @@ To minimize AWS costs when the environment is not in active use (saving ~$3.50/d
 The coordinator currently exposes:
 
 - `POST /jobs`
+- `POST /jobs/create`
 - `GET /jobs`
 - `GET /jobs/{job_id}`
 - `POST /jobs/{job_id}/rank`
@@ -105,6 +106,7 @@ The coordinator currently exposes:
 - `GET /agents/status`
 - `GET /audit/bias-check`
 - `GET /health`
+- WebSocket `/ws`
 
 The frontend calls these through an `/api/` proxy when running behind the bundled Nginx config.
 
@@ -214,8 +216,7 @@ There are unit tests for the coordinator, resume intake, screening, ranking, and
 
 ## Current Gaps
 
-- `POST /jobs` is a run-triggering endpoint, not a metadata-only "create empty job" endpoint.
-- The frontend still attempts a WebSocket connection at `/ws`, but the coordinator does not currently expose a WebSocket route.
-- The frontend includes a `deleteCandidate` API helper, but there is no matching coordinator delete endpoint yet.
 - Ranking can overwrite candidate recommendation and status after the main workflow completes, but ranking artifacts are not persisted in Postgres.
-- There is no async queue or background worker orchestration yet; the main workflow is synchronous.
+- The frontend includes a `deleteCandidate` API helper, but there is no matching coordinator delete endpoint yet.
+- There is no async queue or background worker orchestration yet; batch uploads and workflow execution still run synchronously.
+- Heuristic extraction and explanation quality still have room to improve.
