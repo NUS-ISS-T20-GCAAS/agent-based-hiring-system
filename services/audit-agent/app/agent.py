@@ -55,11 +55,13 @@ class AuditAgent(BaseAgent):
 
     def _build_explanation(self, result: dict, method_used: str) -> str:
         flags = ", ".join(result["bias_flags"]) if result["bias_flags"] else "none"
-        recommendations = "; ".join(result["recommendations"][:2]) if result["recommendations"] else "none"
+        recommendations = "; ".join(result["recommendations"][:2]) if result["recommendations"] else "no immediate action"
+        review_note = "Human review is required." if result["review_required"] else "No human review is required."
         return (
-            f"Audit completed with {method_used} analysis; "
-            f"risk={result['risk_level']}; "
-            f"selection_rate={result['selection_rate']:.1%}; "
-            f"bias_flags={flags}; "
-            f"recommendations={recommendations}"
+            f"Audit completed using {method_used} analysis. "
+            f"Risk level is {result['risk_level']} with a selection rate of {result['selection_rate']:.1%} "
+            f"across {result['total_candidates']} candidates. "
+            f"Bias flags: {flags}. "
+            f"{review_note} "
+            f"Recommended next steps: {recommendations}."
         )

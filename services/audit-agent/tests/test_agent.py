@@ -52,6 +52,7 @@ class AuditAgentTests(unittest.TestCase):
         details = result["payload"].get("details", {})
         self.assertEqual(details.get("method"), "heuristic")
         self.assertTrue(result["payload"]["review_required"])
+        self.assertIn("Human review is required.", result["explanation"])
 
 
 class AuditWorkerTests(unittest.TestCase):

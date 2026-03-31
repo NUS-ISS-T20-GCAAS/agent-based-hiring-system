@@ -1,6 +1,6 @@
 import React from 'react';
 import { Eye, RefreshCw, TrendingUp, FileText, AlertTriangle, Trash2, Loader } from 'lucide-react';
-import { getStatusColor, getRecommendationColor, formatPercent } from '../utils/helpers.js';
+import { getStatusColor, getRecommendationColor, formatPercent, titleCase } from '../utils/helpers.js';
 
 const Candidates = ({
   candidates,
@@ -32,6 +32,16 @@ const Candidates = ({
       return `#${candidate.ranking.position}`;
     }
     return `#${index + 1}`;
+  };
+
+  const statusMatchesRecommendation = (candidate) => {
+    const status = String(candidate.status || '').trim().toLowerCase();
+    const recommendation = String(candidate.recommendation || '').trim().toUpperCase();
+
+    return (
+      (status === 'shortlisted' && recommendation === 'SHORTLIST') ||
+      (status === 'rejected' && recommendation === 'REJECT')
+    );
   };
 
   if (candidates.length === 0 && !isRunning) {
@@ -156,11 +166,13 @@ const Candidates = ({
                   {/* Status Badges */}
                   <div className="flex items-center gap-2 mt-2">
                     <span className={`px-3 py-1 rounded-full text-xs font-semibold border ${getStatusColor(candidate.status)}`}>
-                      {candidate.status?.toUpperCase()}
+                      {titleCase(candidate.status || 'processing')}
                     </span>
-                    <span className={`px-3 py-1 rounded-lg text-xs font-semibold border ${getRecommendationColor(candidate.recommendation)}`}>
-                      {candidate.recommendation}
-                    </span>
+                    {!statusMatchesRecommendation(candidate) && (
+                      <span className={`px-3 py-1 rounded-lg text-xs font-semibold border ${getRecommendationColor(candidate.recommendation)}`}>
+                        {titleCase(candidate.recommendation || 'pending')}
+                      </span>
+                    )}
                     {candidate.needs_human_review && (
                       <span className="inline-flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-semibold border border-amber-300 bg-amber-50 text-amber-800">
                         <AlertTriangle className="w-3.5 h-3.5" />

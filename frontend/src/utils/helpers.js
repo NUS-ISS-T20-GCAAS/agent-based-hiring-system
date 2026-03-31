@@ -41,6 +41,149 @@ export const formatPercent = (value, decimals = 0) => {
   return `${(value * 100).toFixed(decimals)}%`;
 };
 
+export const titleCase = (value) => {
+  if (!value) return '';
+
+  return String(value)
+    .replace(/[_-]+/g, ' ')
+    .split(' ')
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+};
+
+export const formatDecisionType = (decisionType) => {
+  const labels = {
+    resume_intake_result: 'Resume Intake',
+    qualification_screening_result: 'Qualification Screening',
+    audit_bias_check_result: 'Audit Review',
+    candidate_ranking_result: 'Manual Ranking',
+  };
+
+  return labels[decisionType] || titleCase(decisionType);
+};
+
+export const getDecisionTheme = (decisionType) => {
+  const themes = {
+    resume_intake_result: {
+      border: 'border-sky-500',
+      badge: 'bg-sky-50 text-sky-700 border-sky-200',
+      chip: 'bg-sky-50 text-sky-700 border-sky-200',
+    },
+    qualification_screening_result: {
+      border: 'border-blue-500',
+      badge: 'bg-blue-50 text-blue-700 border-blue-200',
+      chip: 'bg-blue-50 text-blue-700 border-blue-200',
+    },
+    audit_bias_check_result: {
+      border: 'border-emerald-500',
+      badge: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+      chip: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    },
+    candidate_ranking_result: {
+      border: 'border-violet-500',
+      badge: 'bg-violet-50 text-violet-700 border-violet-200',
+      chip: 'bg-violet-50 text-violet-700 border-violet-200',
+    },
+  };
+
+  return themes[decisionType] || {
+    border: 'border-slate-400',
+    badge: 'bg-slate-50 text-slate-700 border-slate-200',
+    chip: 'bg-slate-50 text-slate-700 border-slate-200',
+  };
+};
+
+const splitItems = (value) =>
+  value
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+export const parseDecisionReasoning = (reasoning) => {
+  if (!reasoning) {
+    return {
+      summary: 'No reasoning provided.',
+      highlights: [],
+      analysis: null,
+    };
+  }
+
+  const normalized = String(reasoning)
+    .replace(/\s*\|\s*/g, '. ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  const sections = normalized
+    .split(/(?<=[.])\s+(?=[A-Z])/)
+    .map((section) => section.trim())
+    .filter(Boolean);
+
+  let summary = sections[0] || normalized;
+  let analysis = null;
+  const highlights = [];
+
+  sections.slice(1).forEach((section) => {
+    const cleanSection = section.replace(/\.$/, '').trim();
+    const lowerSection = cleanSection.toLowerCase();
+
+    if (lowerSection.startsWith('analysis:')) {
+      analysis = cleanSection.slice(cleanSection.indexOf(':') + 1).trim();
+      return;
+    }
+
+    const colonIndex = cleanSection.indexOf(':');
+    if (colonIndex !== -1) {
+      const label = cleanSection.slice(0, colonIndex).trim();
+      const value = cleanSection.slice(colonIndex + 1).trim();
+      const lowerLabel = label.toLowerCase();
+
+      if (['matched skills', 'missing skills', 'bias flags', 'recommended next steps', 'review reasons', 'skills'].includes(lowerLabel)) {
+        highlights.push({
+          label,
+          kind: 'list',
+          items: splitItems(value.replace(/;\s*/g, ',')),
+        });
+        return;
+      }
+
+      highlights.push({
+        label,
+        kind: 'text',
+        value,
+      });
+      return;
+    }
+
+    if (lowerSection.startsWith('human review')) {
+      highlights.push({
+        label: 'Review',
+        kind: 'text',
+        value: cleanSection,
+      });
+      return;
+    }
+
+    if (!analysis) {
+      analysis = cleanSection;
+    }
+  });
+
+  if (!analysis && sections.length === 1) {
+    analysis = null;
+  }
+
+  if (summary.endsWith('.')) {
+    summary = summary.slice(0, -1);
+  }
+
+  return {
+    summary,
+    highlights,
+    analysis,
+  };
+};
+
 /**
  * Get status color classes
  */

@@ -83,6 +83,8 @@ class ScreeningAgentTests(unittest.TestCase):
         # Verify heuristic method was used
         details = result["payload"].get("details", {})
         self.assertEqual(details.get("method"), "heuristic")
+        self.assertTrue(result["payload"]["needs_human_review"])
+        self.assertIn("heuristic", result["explanation"])
 
     def test_decision_threshold(self):
         """Test that decision correctly reflects threshold"""
@@ -178,6 +180,7 @@ class HeuristicTests(unittest.TestCase):
         self.assertIn("python", result["matched_skills"])
         self.assertIn("fastapi", result["matched_skills"])
         self.assertIn("postgresql", result["missing_skills"])
+        self.assertNotIn("backend", result["missing_skills"])
 
 
 class CoerceResultTests(unittest.TestCase):

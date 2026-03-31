@@ -130,7 +130,13 @@ class ScreeningAgent(BaseAgent):
         # ─────────────────────────────────────────────────────────────────────
 
         # Build detailed explanation
-        explanation = self._build_explanation(result, decision)
+        explanation = self._build_explanation(
+            result,
+            decision=decision,
+            method_used=method_used,
+            needs_human_review=needs_human_review,
+            review_reasons=review_reasons,
+        )
 
         return {
             "payload": {
@@ -155,21 +161,32 @@ class ScreeningAgent(BaseAgent):
             "explanation": explanation,
         }
 
-    def _build_explanation(self, result: dict, decision: str) -> str:
+    def _build_explanation(
+        self,
+        result: dict,
+        *,
+        decision: str,
+        method_used: str,
+        needs_human_review: bool,
+        review_reasons: list[str],
+    ) -> str:
         """Build human-readable explanation"""
-        parts = [
-            f"Decision: {decision} with qualification score of {result['qualification_score']:.1%}",
-            f"Matched skills: {len(result['matched_skills'])}",
-            f"Experience: {result['years_experience']} years"
-        ]
-        
+        parts = [f"Decision {decision} at {result['qualification_score']:.1%} using {method_used} screening."]
+
+        experience_years = result["years_experience"]
+        parts.append(f"Experience: {experience_years} year{'s' if experience_years != 1 else ''}.")
+
         if result["matched_skills"]:
-            parts.append(f"✓ Skills matched: {', '.join(result['matched_skills'][:5])}")
-        
+            parts.append(f"Matched skills: {', '.join(result['matched_skills'][:6])}.")
+
         if result["missing_skills"]:
-            parts.append(f"✗ Skills missing: {', '.join(result['missing_skills'][:5])}")
-        
+            parts.append(f"Missing skills: {', '.join(result['missing_skills'][:6])}.")
+
         if result.get("explanation"):
             parts.append(f"Analysis: {result['explanation']}")
-        
-        return " | ".join(parts)
+
+        if needs_human_review:
+            review_note = ", ".join(review_reasons[:3]) if review_reasons else "manual review requested"
+            parts.append(f"Human review required because {review_note}.")
+
+        return " ".join(parts)

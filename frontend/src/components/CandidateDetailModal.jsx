@@ -1,7 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { X, CheckCircle, Loader, AlertTriangle, Trash2 } from 'lucide-react';
 import api from '../services/api.js';
-import { formatTime, formatPercent } from '../utils/helpers.js';
+import {
+  formatTime,
+  formatPercent,
+  formatDecisionType,
+  getDecisionTheme,
+  parseDecisionReasoning,
+  titleCase,
+} from '../utils/helpers.js';
 
 const CandidateDetailModal = ({ candidateId, onClose, onDeleteCandidate }) => {
   const [candidate, setCandidate] = useState(null);
@@ -22,6 +29,32 @@ const CandidateDetailModal = ({ candidateId, onClose, onDeleteCandidate }) => {
   };
 
   const isCandidateProfileLoading = (value) => (value || '').trim().toLowerCase() === 'unknown candidate';
+
+  const formatAgentLabel = (agentId, decisionType) => {
+    const labels = {
+      'resume-intake-agent': 'Resume Intake Agent',
+      'screening-agent': 'Screening Agent',
+      'audit-agent': 'Audit Agent',
+      'ranking-agent': 'Ranking Agent',
+    };
+
+    if (labels[agentId]) {
+      return labels[agentId];
+    }
+
+    if (agentId && !String(agentId).includes('-')) {
+      return titleCase(agentId);
+    }
+
+    return formatDecisionType(decisionType);
+  };
+
+  const shouldShowAgentLabel = (agentId, decisionType) => {
+    const agentLabel = formatAgentLabel(agentId, decisionType).replace(/\s+agent$/i, '').trim().toLowerCase();
+    const decisionLabel = formatDecisionType(decisionType).trim().toLowerCase();
+
+    return Boolean(agentLabel) && agentLabel !== decisionLabel;
+  };
 
   useEffect(() => {
     if (candidateId) {
@@ -140,6 +173,51 @@ const CandidateDetailModal = ({ candidateId, onClose, onDeleteCandidate }) => {
             </div>
           ) : candidate ? (
             <>
+              {/* Candidate Snapshot */}
+              <div>
+                <h3 className="text-lg font-bold text-slate-900 mb-4">Candidate Snapshot</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Current Status</p>
+                    <p className="mt-2 text-base font-semibold text-slate-900 capitalize">{candidate.status}</p>
+                    <p className="mt-1 text-sm text-slate-600">
+                      Recommendation: <span className="font-medium text-slate-900">{titleCase(candidate.recommendation || 'pending')}</span>
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Review Workflow</p>
+                    <p className="mt-2 text-base font-semibold text-slate-900">
+                      {candidate.needs_human_review ? 'Escalated for review' : 'No review required'}
+                    </p>
+                    <p className="mt-1 text-sm text-slate-600">
+                      Source: <span className="font-medium text-slate-900">{formatEscalationSource(candidate.escalation_source)}</span>
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Candidate Profile</p>
+                    <p className="mt-2 text-base font-semibold text-slate-900">{candidate.skills?.length || 0} skill{candidate.skills?.length === 1 ? '' : 's'} identified</p>
+                    <p className="mt-1 text-sm text-slate-600">
+                      Email: <span className="font-medium text-slate-900">{candidate.email || 'Not available'}</span>
+                    </p>
+                  </div>
+                  <div className={`rounded-xl border p-4 ${
+                    candidate.ranking?.position != null
+                      ? 'border-violet-200 bg-violet-50'
+                      : 'border-slate-200 bg-slate-50'
+                  }`}>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Manual Ranking</p>
+                    <p className="mt-2 text-base font-semibold text-slate-900">
+                      {candidate.ranking?.position != null ? `Ranked #${candidate.ranking.position}` : 'Not manually ranked'}
+                    </p>
+                    <p className="mt-1 text-sm text-slate-600">
+                      {candidate.ranking?.score != null
+                        ? `Ranking score ${formatPercent(candidate.ranking.score)}`
+                        : 'Currently ordered by screening score'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
               {/* Performance Scores */}
               <div>
                 <h3 className="text-lg font-bold text-slate-900 mb-4">Performance Scores</h3>
@@ -285,49 +363,102 @@ const CandidateDetailModal = ({ candidateId, onClose, onDeleteCandidate }) => {
                 <h3 className="text-lg font-bold text-slate-900 mb-4">Agent Decision Trail</h3>
                 {decisions && decisions.length > 0 ? (
                   <div className="space-y-3">
-                    {decisions.map((decision, index) => (
-                      <div 
-                        key={decision.decision_id || index} 
-                        className="bg-slate-50 rounded-lg p-4 border-l-4 border-blue-500"
-                      >
-                        {/* Decision Header */}
-                        <div className="flex items-start justify-between mb-2">
-                          <div className="flex items-center gap-2">
-                            <CheckCircle className="w-5 h-5 text-blue-600 flex-shrink-0" />
-                            <span className="font-semibold text-slate-900">
-                              {decision.agent_id}
-                            </span>
+                    {decisions.map((decision, index) => {
+                      const theme = getDecisionTheme(decision.decision_type);
+                      const parsed = parseDecisionReasoning(decision.reasoning);
+
+                      return (
+                        <div
+                          key={decision.decision_id || index}
+                          className={`rounded-xl border border-slate-200 bg-white p-5 shadow-sm border-l-4 ${theme.border}`}
+                        >
+                          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                            <div className="space-y-3">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${theme.badge}`}>
+                                  {formatDecisionType(decision.decision_type)}
+                                </span>
+                                {shouldShowAgentLabel(decision.agent_id, decision.decision_type) && (
+                                  <span className="text-sm font-semibold text-slate-900">
+                                    {formatAgentLabel(decision.agent_id, decision.decision_type)}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-sm leading-6 text-slate-700">
+                                {parsed.summary}
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-3 md:flex-col md:items-end">
+                              <span className="text-xs text-slate-500">
+                                {formatTime(decision.timestamp)}
+                              </span>
+                              <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${theme.chip}`}>
+                                Confidence {formatPercent(decision.confidence)}
+                              </span>
+                            </div>
                           </div>
-                          <span className="text-xs text-slate-500">
-                            {formatTime(decision.timestamp)}
-                          </span>
-                        </div>
-                        
-                        {/* Decision Content */}
-                        <div className="ml-7">
-                          <p className="text-sm font-medium text-blue-600 mb-1">
-                            {decision.decision_type}
-                          </p>
-                          <p className="text-sm text-slate-700 mb-2">
-                            {decision.reasoning}
-                          </p>
-                          
-                          {/* Confidence Bar */}
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs text-slate-500">Confidence:</span>
-                            <div className="flex-1 max-w-xs bg-slate-200 rounded-full h-1.5">
+
+                          {parsed.highlights.length > 0 && (
+                            <div className="mt-4 grid gap-3 md:grid-cols-2">
+                              {parsed.highlights.map((highlight) => (
+                                <div
+                                  key={`${decision.decision_id || index}-${highlight.label}`}
+                                  className="rounded-lg border border-slate-200 bg-slate-50 p-3"
+                                >
+                                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                    {highlight.label}
+                                  </p>
+                                  {highlight.kind === 'list' ? (
+                                    <div className="mt-2 flex flex-wrap gap-2">
+                                      {highlight.items.length > 0 ? (
+                                        highlight.items.map((item) => (
+                                          <span
+                                            key={item}
+                                            className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${theme.chip}`}
+                                          >
+                                            {item}
+                                          </span>
+                                        ))
+                                      ) : (
+                                        <span className="text-sm text-slate-500">None listed</span>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <p className="mt-2 text-sm leading-6 text-slate-700">
+                                      {highlight.value}
+                                    </p>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {parsed.analysis && (
+                            <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
+                              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                Analysis
+                              </p>
+                              <p className="mt-2 text-sm leading-6 text-slate-700">
+                                {parsed.analysis}
+                              </p>
+                            </div>
+                          )}
+
+                          <div className="mt-4 flex items-center gap-3">
+                            <CheckCircle className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                            <div className="flex-1 bg-slate-200 rounded-full h-2">
                               <div
-                                className="bg-blue-600 h-1.5 rounded-full transition-all duration-500"
-                                style={{ width: `${decision.confidence * 100}%` }}
+                                className="h-2 rounded-full bg-slate-900 transition-all duration-500"
+                                style={{ width: `${(decision.confidence || 0) * 100}%` }}
                               />
                             </div>
-                            <span className="text-xs font-semibold text-slate-700">
+                            <span className="text-xs font-semibold text-slate-700 min-w-[3rem] text-right">
                               {formatPercent(decision.confidence)}
                             </span>
                           </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 ) : (
                   <div className="text-center py-8 bg-slate-50 rounded-lg">
@@ -364,6 +495,10 @@ const CandidateDetailModal = ({ candidateId, onClose, onDeleteCandidate }) => {
                     }`}>
                       {candidate.recommendation || 'PENDING'}
                     </span>
+                  </div>
+                  <div>
+                    <span className="text-sm font-medium text-slate-600">Review status: </span>
+                    <span className="text-sm text-slate-900">{titleCase(candidate.review_status || 'not_required')}</span>
                   </div>
                 </div>
               </div>

@@ -6,6 +6,50 @@ Provides heuristic fallback and result normalization
 from app.config import QUALIFICATION_THRESHOLD
 
 
+KNOWN_SKILL_KEYWORDS = (
+    "api design",
+    "ci/cd",
+    "python",
+    "fastapi",
+    "django",
+    "flask",
+    "sql",
+    "postgresql",
+    "mysql",
+    "redis",
+    "aws",
+    "docker",
+    "kubernetes",
+    "testing",
+    "javascript",
+    "typescript",
+    "react",
+    "git",
+)
+
+
+def _normalize_skill_list(skills: list | None) -> list[str]:
+    if not isinstance(skills, list):
+        return []
+
+    seen: set[str] = set()
+    normalized: list[str] = []
+    for skill in skills:
+        if not isinstance(skill, str):
+            continue
+        cleaned = " ".join(skill.strip().lower().split())
+        if not cleaned or cleaned in seen:
+            continue
+        seen.add(cleaned)
+        normalized.append(cleaned)
+    return normalized
+
+
+def _extract_skill_keywords(text: str) -> list[str]:
+    lower_text = (text or "").lower()
+    return [skill for skill in KNOWN_SKILL_KEYWORDS if skill in lower_text]
+
+
 def heuristic_screen_candidate(
     *, 
     parsed_resume: dict, 
@@ -23,64 +67,41 @@ def heuristic_screen_candidate(
     5. Compute weighted qualification score (70% skills, 30% experience)
     """
     # Extract and normalize candidate data
-    candidate_skills = [
-        skill.lower() 
-        for skill in parsed_resume.get("skills", []) 
-        if isinstance(skill, str)
-    ]
+    candidate_skills = _normalize_skill_list(parsed_resume.get("skills", []))
     years_experience = parsed_resume.get("years_experience") or 0
-    
-    # Build required skills set from multiple sources
-    required_skills = set()
-    
-    # From job description (word extraction)
-    if job_description:
-        words = job_description.lower().split()
-        required_skills.update(word for word in words if len(word) > 2)
-    
-    # From structured requirements (if provided)
-    if job_requirements:
-        if "required_skills" in job_requirements:
-            required_skills.update(
-                skill.lower() 
-                for skill in job_requirements["required_skills"]
-            )
-        if "preferred_skills" in job_requirements:
-            required_skills.update(
-                skill.lower() 
-                for skill in job_requirements["preferred_skills"]
-            )
-    
-    required_skills = sorted(required_skills)
-    required_skill_set = set(required_skills)
-    
-    # Calculate matches and misses
-    matched_skills = [
-        skill 
-        for skill in candidate_skills 
-        if skill in required_skill_set
-    ]
-    
-    missing_skills = [
-        skill 
-        for skill in required_skills 
-        if skill in required_skill_set - set(matched_skills)
-    ]
-    
-    # Calculate component scores
-    if required_skills:
-        skill_score = len(matched_skills) / len(required_skills)
-    else:
-        skill_score = 1.0  # No requirements = automatic pass on skills
-    
-    # Experience score (normalized to 8 years as "expert" level)
+
+    required_skills = _normalize_skill_list((job_requirements or {}).get("required_skills"))
+    preferred_skills = _normalize_skill_list((job_requirements or {}).get("preferred_skills"))
+
+    if not required_skills:
+        required_skills = _extract_skill_keywords(job_description)
+
+    required_set = set(required_skills)
+    preferred_set = set(preferred_skills)
+    candidate_set = set(candidate_skills)
+
+    matched_required = [skill for skill in required_skills if skill in candidate_set]
+    missing_required = [skill for skill in required_skills if skill not in candidate_set]
+    matched_preferred = [skill for skill in preferred_skills if skill in candidate_set]
+    missing_preferred = [skill for skill in preferred_skills if skill not in candidate_set]
+
+    matched_skills = matched_required + [skill for skill in matched_preferred if skill not in matched_required]
+    missing_skills = missing_required + [skill for skill in missing_preferred if skill not in missing_required]
+
+    required_score = 1.0 if not required_skills else len(matched_required) / len(required_skills)
+    preferred_score = 1.0 if not preferred_skills else len(matched_preferred) / len(preferred_skills)
+    skill_score = required_score if not preferred_skills else min(1.0, (required_score * 0.85) + (preferred_score * 0.15))
+
+    min_years = (job_requirements or {}).get("min_years_experience")
     if isinstance(years_experience, (int, float)):
-        experience_score = min(1.0, years_experience / 8)
+        if isinstance(min_years, (int, float)) and min_years > 0:
+            experience_score = min(1.0, years_experience / min_years)
+        else:
+            experience_score = min(1.0, years_experience / 8)
     else:
         experience_score = 0.0
-    
-    # Weighted qualification score: 70% skills + 30% experience
-    qualification_score = round((skill_score * 0.7) + (experience_score * 0.3), 3)
+
+    qualification_score = round((skill_score * 0.75) + (experience_score * 0.25), 3)
     
     # Pass threshold driven by config — not hardcoded
     meets_threshold = qualification_score >= QUALIFICATION_THRESHOLD
@@ -91,11 +112,12 @@ def heuristic_screen_candidate(
     
     # Build explanation
     explanation = (
-        f"Heuristic screening: score={qualification_score:.1%} "
-        f"(skills={skill_score:.1%}, experience={experience_score:.1%}); "
-        f"matched={len(matched_skills)}/{len(required_skills)} skills; "
-        f"years={years_experience}; "
-        f"threshold={QUALIFICATION_THRESHOLD:.0%}"
+        f"Heuristic screening used structured skill matching where available. "
+        f"Score={qualification_score:.1%} "
+        f"(required={required_score:.1%}, preferred={preferred_score:.1%}, experience={experience_score:.1%}). "
+        f"Matched {len(matched_required)}/{len(required_skills) or len(matched_skills) or 1} required skills"
+        f"{f' and {len(matched_preferred)}/{len(preferred_skills)} preferred skills' if preferred_skills else ''}. "
+        f"Years experience={years_experience}; threshold={QUALIFICATION_THRESHOLD:.0%}."
     )
     
     return {

@@ -38,15 +38,18 @@ class ResumeIntakeAgentTests(unittest.TestCase):
         agent = ResumeIntakeAgent(agent_type="resume_intake", shared_memory=SharedMemory())
         result = agent.handle(
             {
-                "resume_text": "Bob 5 years python bob@example.com",
+                "resume_text": "Bob Tan\nbob@example.com\nPython backend engineer with 5 years of Python, FastAPI, Docker, and AWS experience.",
                 "resume_url": "upload://bob.txt",
                 "job_description": "Need python",
             }
         )
 
+        self.assertEqual(result["payload"]["name"], "Bob Tan")
         self.assertEqual(result["payload"]["email"], "bob@example.com")
-        self.assertEqual(result["payload"]["skills"], ["python"])
+        self.assertEqual(result["payload"]["skills"], ["python", "fastapi", "aws", "docker"])
+        self.assertIn("summary", result["payload"])
         self.assertLess(result["confidence"], 0.9)
+        self.assertIn("heuristic fallback", result["explanation"])
 
 
 if __name__ == "__main__":
