@@ -215,6 +215,10 @@ make migrate-db-services
 
 There are unit tests for the coordinator, resume intake, screening, ranking, and audit services under `services/*/tests`.
 
+## Documentation
+
+- Demo verification checklist: `docs/DEMO_VERIFICATION.md`
+
 ## Current Gaps
 
 - The current queue worker runs inside the coordinator process rather than in a separate multi-process queue stack such as Redis/Celery.
