@@ -435,18 +435,18 @@ jobs:
           OPENAI_KEY="${{ secrets.OPENAI_API_KEY }}"
 
           cat > ${{ env.TF_DIR }}/k8s/secrets.yaml <<EOF
-apiVersion: v1
-kind: Secret
-metadata:
-  name: hiring-system-secrets
-  namespace: services
-type: Opaque
-data:
-  openai-api-key: $(echo -n "$OPENAI_KEY" | base64 -w0)
-  db-host: $(echo -n "$RDS_HOST" | base64 -w0)
-  db-username: $(echo -n "$DB_USER" | base64 -w0)
-  db-password: $(echo -n "$DB_PASS" | base64 -w0)
-EOF
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: hiring-system-secrets
+            namespace: services
+          type: Opaque
+          data:
+            openai-api-key: $(echo -n "$OPENAI_KEY" | base64 -w0)
+            db-host: $(echo -n "$RDS_HOST" | base64 -w0)
+            db-username: $(echo -n "$DB_USER" | base64 -w0)
+            db-password: $(echo -n "$DB_PASS" | base64 -w0)
+          EOF
 
       - name: Apply K8s Manifests
         run: |
