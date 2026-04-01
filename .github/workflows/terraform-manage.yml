@@ -234,37 +234,73 @@ jobs:
         run: terraform init
         working-directory: ${{ env.TF_DIR }}
 
-      - name: Clean Up Stale NAT Route (if any)
+      - name: Fix Route Table State & Clean Stale Route
         run: |
-          echo "🔧 Checking for stale 0.0.0.0/0 route in private route table..."
+          echo "🔧 Fixing private route table state and cleaning stale routes..."
+          echo ""
 
-          # Find the private route table by its Name tag
-          RT_ID=$(aws ec2 describe-route-tables \
-            --filters "Name=tag:Name,Values=hiring-system-${{ github.event.inputs.environment }}-private-rt" \
-            --query "RouteTables[0].RouteTableId" \
-            --output text 2>/dev/null || echo "None")
+          # ── Step 1: Get the private route table ID from Terraform state ──
+          # Use terraform show -json for reliable structured output
+          RT_ID=$(terraform show -json 2>/dev/null | \
+            python3 -c "
+          import sys, json
+          try:
+              data = json.load(sys.stdin)
+              for r in data.get('values', {}).get('root_module', {}).get('resources', []):
+                  if r.get('type') == 'aws_route_table' and r.get('name') == 'private':
+                      print(r['values']['id'])
+                      sys.exit(0)
+          except Exception:
+              pass
+          " || echo "")
 
-          if [ "$RT_ID" != "None" ] && [ -n "$RT_ID" ]; then
-            echo "Found private route table: $RT_ID"
-
-            # Check if theres an existing 0.0.0.0/0 route
-            EXISTING_ROUTE=$(aws ec2 describe-route-tables \
-              --route-table-ids "$RT_ID" \
-              --query "RouteTables[0].Routes[?DestinationCidrBlock=='0.0.0.0/0'].{GW:GatewayId,NAT:NatGatewayId}" \
-              --output text 2>/dev/null || echo "")
-
-            if [ -n "$EXISTING_ROUTE" ] && [ "$EXISTING_ROUTE" != "None" ]; then
-              echo "⚠️ Found stale 0.0.0.0/0 route — deleting so Terraform can recreate it cleanly..."
-              aws ec2 delete-route \
-                --route-table-id "$RT_ID" \
-                --destination-cidr-block "0.0.0.0/0" 2>/dev/null || true
-              echo "✅ Stale route deleted."
-            else
-              echo "✅ No stale route found — Terraform will create it fresh."
+          # Fallback: search by VPC ID if state parsing failed
+          if [ -z "$RT_ID" ]; then
+            echo "  State parse failed, falling back to VPC-based search..."
+            VPC_ID=$(terraform output -raw vpc_id 2>/dev/null || echo "")
+            if [ -n "$VPC_ID" ]; then
+              RT_ID=$(aws ec2 describe-route-tables \
+                --filters "Name=vpc-id,Values=$VPC_ID" "Name=tag:Name,Values=*private*" \
+                --query "RouteTables[0].RouteTableId" \
+                --output text 2>/dev/null || echo "None")
+              [ "$RT_ID" = "None" ] && RT_ID=""
             fi
-          else
-            echo "ℹ️ No private route table found — Terraform will create everything."
           fi
+
+          if [ -z "$RT_ID" ]; then
+            echo "ℹ️  No private route table found — Terraform will create everything fresh."
+            exit 0
+          fi
+
+          echo "  Found private route table: $RT_ID"
+
+          # ── Step 2: Delete any existing 0.0.0.0/0 route from AWS ──
+          echo ""
+          echo "  Deleting any existing 0.0.0.0/0 route from AWS..."
+          aws ec2 delete-route \
+            --route-table-id "$RT_ID" \
+            --destination-cidr-block "0.0.0.0/0" 2>/dev/null \
+            && echo "  ✅ Deleted stale 0.0.0.0/0 route from AWS." \
+            || echo "  ℹ️  No 0.0.0.0/0 route exists (already clean)."
+
+          # ── Step 3: Fix Terraform state ──
+          # The old state may have an inline route{} block inside aws_route_table.private.
+          # Re-import the route table so state matches current AWS reality (no inline route).
+          echo ""
+          echo "  Re-importing route table to sync Terraform state..."
+          terraform state rm aws_route_table.private 2>/dev/null || true
+          terraform import \
+            -var="environment=${{ github.event.inputs.environment }}" \
+            aws_route_table.private "$RT_ID"
+          echo "  ✅ Route table state synced."
+
+          # Also remove any stale aws_route.private_nat from state if it exists
+          # (it shouldn't after destroy, but just in case)
+          terraform state rm aws_route.private_nat 2>/dev/null || true
+
+          echo ""
+          echo "✅ Route table cleanup complete. Terraform apply can proceed cleanly."
+        working-directory: ${{ env.TF_DIR }}
 
       - name: Terraform Plan
         run: |
