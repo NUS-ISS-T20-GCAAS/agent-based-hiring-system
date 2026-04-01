@@ -3,11 +3,11 @@ Unit tests for Screening Agent
 """
 
 import unittest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 from app.agent import ScreeningAgent
 from app.shared_memory import SharedMemory
-from app.worker import heuristic_screen_candidate, coerce_screening_result
+from app.worker import heuristic_screen_candidate, coerce_screening_result, screen_with_skill_assessment
 
 
 class ScreeningAgentTests(unittest.TestCase):
@@ -128,6 +128,34 @@ class ScreeningAgentTests(unittest.TestCase):
             
             self.assertEqual(result["payload"]["decision"], "FAIL")
 
+    def test_uses_skill_assessment_artifact_when_provided(self):
+        agent = ScreeningAgent(agent_type="screening", shared_memory=SharedMemory())
+
+        result = agent.handle(
+            {
+                "parsed_resume": {"skills": ["python"], "years_experience": 5},
+                "job_description": "Need python fastapi sql",
+                "job_requirements": {
+                    "required_skills": ["python", "fastapi"],
+                    "preferred_skills": ["sql"],
+                    "min_years_experience": 3,
+                },
+                "skill_assessment": {
+                    "skills_score": 0.7,
+                    "matched_required_skills": ["python"],
+                    "missing_required_skills": ["fastapi"],
+                    "matched_preferred_skills": [],
+                    "missing_preferred_skills": ["sql"],
+                    "confidence": 0.82,
+                },
+            }
+        )
+
+        self.assertEqual(result["payload"]["details"]["method"], "skill_assessment_supported")
+        self.assertEqual(result["payload"]["matched_skills"], ["python"])
+        self.assertIn("fastapi", result["payload"]["missing_skills"])
+        self.assertTrue(result["payload"]["meets_threshold"])
+
 
 class HeuristicTests(unittest.TestCase):
     """Test cases for heuristic screening fallback"""
@@ -181,6 +209,24 @@ class HeuristicTests(unittest.TestCase):
         self.assertIn("fastapi", result["matched_skills"])
         self.assertIn("postgresql", result["missing_skills"])
         self.assertNotIn("backend", result["missing_skills"])
+
+    def test_screen_with_skill_assessment(self):
+        result = screen_with_skill_assessment(
+            parsed_resume={"years_experience": 4},
+            job_requirements={"min_years_experience": 2},
+            skill_assessment={
+                "skills_score": 0.75,
+                "matched_required_skills": ["python", "fastapi"],
+                "missing_required_skills": ["sql"],
+                "matched_preferred_skills": ["docker"],
+                "missing_preferred_skills": [],
+                "confidence": 0.88,
+            },
+        )
+
+        self.assertTrue(result["meets_threshold"])
+        self.assertEqual(result["matched_skills"], ["python", "fastapi", "docker"])
+        self.assertIn("sql", result["missing_skills"])
 
 
 class CoerceResultTests(unittest.TestCase):

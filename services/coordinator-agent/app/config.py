@@ -1,6 +1,7 @@
 import os
 
 RESUME_INTAKE_AGENT_URL = os.getenv("RESUME_INTAKE_AGENT_URL", "http://resume-intake-agent:8000")
+SKILL_ASSESSMENT_AGENT_URL = os.getenv("SKILL_ASSESSMENT_AGENT_URL", "http://skill-assessment-agent:8000")
 SCREENING_AGENT_URL = os.getenv("SCREENING_AGENT_URL", "http://screening-agent:8000")
 RANKING_AGENT_URL = os.getenv("RANKING_AGENT_URL", "http://ranking-agent:8000")
 AUDIT_AGENT_URL = os.getenv("AUDIT_AGENT_URL", "http://audit-agent:8000")

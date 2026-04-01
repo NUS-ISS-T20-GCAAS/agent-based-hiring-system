@@ -2,24 +2,26 @@
 **Project:** Agent-Based Hiring System for Scalable and Explainable Resume Screening
 **Team:** Team 20
 **Module:** GC Architecting AI Systems - Practice
-**Last Updated:** 2026-03-31
+**Last Updated:** 2026-04-01
 
 ---
 
 ## Overall Status
 
-The repo now contains a working backend slice with five services:
+The repo now contains a working backend slice with six services:
 
 1. coordinator
 2. resume intake
-3. screening
-4. audit
-5. ranking
+3. skill assessment
+4. screening
+5. audit
+6. ranking
 
 The default persisted workflow is:
 
 - coordinator bootstrap
 - resume intake
+- skill assessment
 - screening
 - audit
 - candidate persistence and review-state update
@@ -45,6 +47,7 @@ OpenAI model hooks exist for resume intake, screening, and audit. Real model-bac
 - [x] Coordinator dispatches work via HTTP
 - [x] Resume intake runs as an independent service
 - [x] Screening runs as an independent service
+- [x] Skill assessment runs as an independent service
 - [x] Audit runs as an independent service
 - [x] Ranking runs as an independent service
 - [x] Health endpoints exposed for all current services
@@ -61,16 +64,17 @@ OpenAI model hooks exist for resume intake, screening, and audit. Real model-bac
 
 ### Active Agents
 - [x] Resume Intake Agent
+- [x] Skill Assessment Agent
 - [x] Qualification Screening Agent
 - [x] Audit Agent
 - [x] Ranking Agent
 
 ### Coordinator Workflow
-- [x] `resume-intake -> screening -> audit` orchestration
+- [x] `resume-intake -> skill-assessment -> screening -> audit` orchestration
 - [x] Workflow bootstrap and completion tracking
 - [x] Candidate record creation during processing
 - [x] Metadata-only job creation via `POST /jobs/create`
-- [x] Artifact persistence for intake, screening, and audit
+- [x] Artifact persistence for intake, skill assessment, screening, and audit
 - [x] Coordinator-level human review state derived from screening and audit
 - [x] Review-required state exposed through candidate read APIs
 - [ ] Ranking integrated into the default pipeline
@@ -113,6 +117,7 @@ OpenAI model hooks exist for resume intake, screening, and audit. Real model-bac
 - [x] Screening LLM and fallback tests
 - [x] Audit agent LLM and fallback tests
 - [x] Ranking agent tests
+- [x] Skill assessment agent tests
 
 ---
 

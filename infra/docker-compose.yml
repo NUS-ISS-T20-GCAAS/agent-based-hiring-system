@@ -22,6 +22,7 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o-mini}
       - AUDIT_AGENT_URL=http://audit-agent:8000
+      - SKILL_ASSESSMENT_AGENT_URL=http://skill-assessment-agent:8000
       - DB_HOST=postgres
       - DB_PORT=5432
       - DB_NAME=hiring_system
@@ -31,6 +32,8 @@ services:
       db-migrate:
         condition: service_completed_successfully
       resume-intake-agent:
+        condition: service_healthy
+      skill-assessment-agent:
         condition: service_healthy
       screening-agent:
         condition: service_healthy
@@ -76,6 +79,25 @@ services:
       retries: 5  
     networks:
       - app-net  
+
+  skill-assessment-agent:
+    build:
+      context: ../services/skill-assessment-agent
+      dockerfile: Dockerfile
+    ports:
+      - "8005:8000"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o-mini}
+    depends_on:
+      - postgres
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 60s
+      timeout: 2s
+      retries: 5
+    networks:
+      - app-net
 
   ranking-agent:
     build:

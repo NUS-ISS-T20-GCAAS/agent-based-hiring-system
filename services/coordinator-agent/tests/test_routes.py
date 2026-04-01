@@ -136,6 +136,14 @@ class FakeRepository:
     def get_candidate_decisions(self, *, candidate_id: str):
         decisions = [
             {
+                "decision_id": "d-0",
+                "agent_id": "skill-assessment-agent",
+                "artifact_type": "skill_assessment_result",
+                "explanation": "skill gap analysis",
+                "confidence": 0.84,
+                "created_at": "2026-03-12T11:59:00+00:00",
+            },
+            {
                 "decision_id": "d-1",
                 "agent_id": "screening-agent",
                 "artifact_type": "qualification_screening_result",
@@ -173,6 +181,20 @@ class FakeRepository:
                 "confidence": 0.8,
                 "explanation": "intake done",
                 "created_at": "2026-02-24T12:00:02+00:00",
+                "version": 1,
+            },
+            {
+                "artifact_id": "a-skill",
+                "entity_id": job_id or "job-1",
+                "candidate_id": "c-1",
+                "correlation_id": "cid-1",
+                "agent_id": "skill-assessment-agent",
+                "agent_type": "skill_assessment",
+                "artifact_type": "skill_assessment_result",
+                "payload": {"skills_score": 0.7, "gaps": ["sql"]},
+                "confidence": 0.84,
+                "explanation": "skill assessment done",
+                "created_at": "2026-02-24T12:00:03+00:00",
                 "version": 1,
             },
             {
@@ -442,12 +464,14 @@ class RoutesReadApiTests(unittest.TestCase):
         self.assertIsNone(candidate["ranking"]["position"])
 
         decisions = get_candidate_decisions("c-1")
-        self.assertEqual(len(decisions), 1)
-        self.assertEqual(decisions[0]["decision_type"], "qualification_screening_result")
+        self.assertEqual(len(decisions), 2)
+        self.assertEqual(decisions[0]["decision_type"], "skill_assessment_result")
+        self.assertEqual(decisions[1]["decision_type"], "qualification_screening_result")
 
         artifacts = get_job_artifacts("job-1")
-        self.assertEqual(len(artifacts), 2)
-        self.assertEqual(artifacts[1]["artifact_type"], "audit_bias_check_result")
+        self.assertEqual(len(artifacts), 3)
+        self.assertEqual(artifacts[1]["artifact_type"], "skill_assessment_result")
+        self.assertEqual(artifacts[2]["artifact_type"], "audit_bias_check_result")
 
         stats = get_stats(job_id="job-1")
         self.assertEqual(stats["total_candidates"], 10)
@@ -477,8 +501,8 @@ class RoutesReadApiTests(unittest.TestCase):
         self.assertEqual(ranked_candidate["ranking"]["ranked_at"], "2026-03-25T10:00:00+00:00")
 
         decisions_after_rank = get_candidate_decisions("c-1")
-        self.assertEqual(len(decisions_after_rank), 2)
-        self.assertEqual(decisions_after_rank[1]["decision_type"], "candidate_ranking_result")
+        self.assertEqual(len(decisions_after_rank), 3)
+        self.assertEqual(decisions_after_rank[2]["decision_type"], "candidate_ranking_result")
 
     @patch("app.routes.requests.post")
     @patch("app.routes.CoordinatorRepository")

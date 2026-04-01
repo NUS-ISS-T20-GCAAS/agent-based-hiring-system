@@ -22,7 +22,9 @@
 │       ├── 003_workflow_artifacts.sql
 │       ├── 004_indexes.sql
 │       ├── 005_job_requirements.sql
-│       └── 006_candidate_review_state.sql
+│       ├── 006_candidate_review_state.sql
+│       ├── 007_candidate_ranking_state.sql
+│       └── 008_workflow_queue.sql
 ├── frontend
 │   ├── Dockerfile
 │   ├── index.html
@@ -85,6 +87,11 @@
     │   ├── requirements.txt
     │   └── tests
     ├── resume-intake-agent
+    │   ├── Dockerfile
+    │   ├── app
+    │   ├── requirements.txt
+    │   └── tests
+    ├── skill-assessment-agent
     │   ├── Dockerfile
     │   ├── app
     │   ├── requirements.txt

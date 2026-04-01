@@ -324,17 +324,23 @@ class CoordinatorRepository:
         candidate_id: str,
         run_id: str,
         intake_payload: dict[str, Any] | None,
+        skill_payload: dict[str, Any] | None,
         screening_payload: dict[str, Any] | None,
         review_state: dict[str, Any] | None,
     ) -> None:
         intake_payload = intake_payload or {}
+        skill_payload = skill_payload or {}
         screening_payload = screening_payload or {}
         review_state = review_state or {}
 
-        matched = screening_payload.get("matched_skills") or []
-        missing = screening_payload.get("missing_skills") or []
-        skills_denominator = len(matched) + len(missing)
-        skills_score = 0.0 if skills_denominator == 0 else len(matched) / skills_denominator
+        try:
+            skills_score = float(skill_payload.get("skills_score"))
+            skills_score = max(0.0, min(1.0, skills_score))
+        except (TypeError, ValueError):
+            matched = screening_payload.get("matched_skills") or []
+            missing = screening_payload.get("missing_skills") or []
+            skills_denominator = len(matched) + len(missing)
+            skills_score = 0.0 if skills_denominator == 0 else len(matched) / skills_denominator
 
         qualification_score = float(screening_payload.get("qualification_score") or 0.0)
         composite_score = round((qualification_score * 0.7) + (skills_score * 0.3), 4)

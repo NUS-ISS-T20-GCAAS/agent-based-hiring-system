@@ -75,7 +75,7 @@ class CoordinatorRunJobTests(unittest.TestCase):
     @patch("app.coordinator.emit_agent_activity")
     @patch("app.coordinator.time.sleep", return_value=None)
     @patch("app.coordinator.requests.post")
-    def test_run_job_calls_intake_then_screening_then_audit(
+    def test_run_job_calls_intake_then_skill_assessment_then_screening_then_audit(
         self,
         post_mock,
         _sleep_mock,
@@ -92,6 +92,29 @@ class CoordinatorRunJobTests(unittest.TestCase):
             "payload": {"skills": ["python"], "years_experience": 5},
             "confidence": 0.8,
             "explanation": "intake ok",
+            "created_at": "2026-02-24T12:00:00+00:00",
+            "version": 1,
+        }
+        skill_artifact = {
+            "artifact_id": "a-skill",
+            "entity_id": "job-123",
+            "correlation_id": "cid-1",
+            "agent_id": "agent-skill",
+            "agent_type": "skill_assessment",
+            "artifact_type": "skill_assessment_result",
+            "payload": {
+                "skills_score": 0.8,
+                "matched_required_skills": ["python"],
+                "missing_required_skills": ["fastapi"],
+                "matched_preferred_skills": [],
+                "missing_preferred_skills": ["docker"],
+                "detected_soft_skills": ["communication"],
+                "strengths": ["python"],
+                "gaps": ["fastapi"],
+                "gap_analysis": "Skill assessment summary",
+            },
+            "confidence": 0.84,
+            "explanation": "skill assessment ok",
             "created_at": "2026-02-24T12:00:00+00:00",
             "version": 1,
         }
@@ -137,6 +160,7 @@ class CoordinatorRunJobTests(unittest.TestCase):
         }
         post_mock.side_effect = [
             FakeResponse(intake_artifact),
+            FakeResponse(skill_artifact),
             FakeResponse(screening_artifact),
             FakeResponse(audit_artifact),
         ]
@@ -157,16 +181,18 @@ class CoordinatorRunJobTests(unittest.TestCase):
         self.assertEqual(result.job_id, "job-123")
         self.assertEqual(result.status, "completed")
         self.assertEqual(result.artifact_id, "a-audit")
-        self.assertEqual(post_mock.call_count, 3)
+        self.assertEqual(post_mock.call_count, 4)
 
         first_payload = post_mock.call_args_list[0].kwargs["json"]
         second_payload = post_mock.call_args_list[1].kwargs["json"]
         third_payload = post_mock.call_args_list[2].kwargs["json"]
+        fourth_payload = post_mock.call_args_list[3].kwargs["json"]
 
         self.assertEqual(first_payload["entity_id"], "job-123")
         self.assertEqual(first_payload["input_data"]["resume_url"], "https://example.com/resume.pdf")
         self.assertEqual(first_payload["correlation_id"], second_payload["correlation_id"])
         self.assertEqual(second_payload["correlation_id"], third_payload["correlation_id"])
+        self.assertEqual(third_payload["correlation_id"], fourth_payload["correlation_id"])
         self.assertEqual(
             second_payload["input_data"]["parsed_resume"],
             intake_artifact["payload"],
@@ -180,9 +206,16 @@ class CoordinatorRunJobTests(unittest.TestCase):
                 "education_level": None,
             },
         )
-        self.assertEqual(third_payload["input_data"]["job_id"], "job-123")
-        self.assertEqual(third_payload["input_data"]["stats"]["shortlisted"], 1)
-        self.assertEqual(third_payload["input_data"]["candidates"][0]["status"], "shortlisted")
+        self.assertEqual(second_payload["input_data"]["resume_text"], "Python developer with 5 years")
+        self.assertEqual(
+            third_payload["input_data"]["skill_assessment"],
+            skill_artifact["payload"],
+        )
+        self.assertEqual(fourth_payload["input_data"]["job_id"], "job-123")
+        self.assertEqual(fourth_payload["input_data"]["stats"]["shortlisted"], 1)
+        self.assertEqual(fourth_payload["input_data"]["candidates"][0]["status"], "shortlisted")
+        self.assertEqual(fourth_payload["input_data"]["candidates"][0]["scores"]["skills"], 0.8)
+        self.assertEqual(repository.completed_workflow_kwargs["skill_payload"], skill_artifact["payload"])
         self.assertEqual(
             repository.completed_workflow_kwargs["review_state"],
             {
@@ -229,6 +262,21 @@ class CoordinatorRunJobTests(unittest.TestCase):
             FakeResponse(intake_artifact),
             FakeResponse(
                 {
+                    "artifact_id": "a-skill",
+                    "entity_id": "job-503",
+                    "correlation_id": "cid-2",
+                    "agent_id": "agent-skill",
+                    "agent_type": "skill_assessment",
+                    "artifact_type": "skill_assessment_result",
+                    "payload": {"skills_score": 0.65},
+                    "confidence": 0.8,
+                    "explanation": "skill ok",
+                    "created_at": "2026-02-24T12:00:00+00:00",
+                    "version": 1,
+                }
+            ),
+            FakeResponse(
+                {
                     "artifact_id": "a-screen",
                     "entity_id": "job-503",
                     "correlation_id": "cid-2",
@@ -258,7 +306,7 @@ class CoordinatorRunJobTests(unittest.TestCase):
 
         self.assertEqual(ctx.exception.status_code, 503)
         self.assertEqual(ctx.exception.detail, "audit unavailable")
-        self.assertEqual(post_mock.call_count, 5)
+        self.assertEqual(post_mock.call_count, 6)
 
     @patch("app.coordinator.time.sleep", return_value=None)
     @patch("app.coordinator.requests.post")
@@ -275,6 +323,25 @@ class CoordinatorRunJobTests(unittest.TestCase):
                     "payload": {"skills": ["python"], "years_experience": 4},
                     "confidence": 0.8,
                     "explanation": "intake ok",
+                    "created_at": "2026-02-24T12:00:00+00:00",
+                    "version": 1,
+                }
+            ),
+            FakeResponse(
+                {
+                    "artifact_id": "a-skill",
+                    "entity_id": "job-789",
+                    "correlation_id": "cid-3",
+                    "agent_id": "agent-skill",
+                    "agent_type": "skill_assessment",
+                    "artifact_type": "skill_assessment_result",
+                    "payload": {
+                        "skills_score": 0.7,
+                        "matched_required_skills": ["python"],
+                        "missing_required_skills": ["fastapi"],
+                    },
+                    "confidence": 0.82,
+                    "explanation": "skill ok",
                     "created_at": "2026-02-24T12:00:00+00:00",
                     "version": 1,
                 }

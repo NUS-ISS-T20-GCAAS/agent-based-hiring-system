@@ -6,6 +6,7 @@ An explainable hiring workflow built as cooperating services:
 - `coordinator-agent` for orchestration and persistence
 - `resume-intake-agent` for structured resume extraction
 - `screening-agent` for qualification scoring and review flags
+- `skill-assessment-agent` for competency profiling and gap analysis
 - `audit-agent` for bias and compliance checks
 - `ranking-agent` for manual re-ranking of candidates in a job
 - `postgres` for jobs, candidates, workflow runs, and artifacts
@@ -19,13 +20,14 @@ The current codebase supports a working queued backend flow:
 2. The coordinator parses uploaded TXT, PDF, and DOCX resumes and enqueues workflow jobs in Postgres.
 3. A coordinator worker claims queued jobs, upserts job metadata, creates a candidate for each uploaded resume, and opens a workflow run.
 4. The coordinator calls `resume-intake-agent`.
-5. The coordinator calls `screening-agent`.
-6. The coordinator calls `audit-agent`.
-7. The coordinator persists artifacts from each completed step in Postgres.
-8. The coordinator updates candidate scores, recommendation, and human-review state.
-9. The frontend reads jobs, candidates, stats, decision history, audit output, and live activity updates from coordinator APIs.
+5. The coordinator calls `skill-assessment-agent`.
+6. The coordinator calls `screening-agent`.
+7. The coordinator calls `audit-agent`.
+8. The coordinator persists artifacts from each completed step in Postgres.
+9. The coordinator updates candidate scores, recommendation, and human-review state.
+10. The frontend reads jobs, candidates, stats, decision history, audit output, and live activity updates from coordinator APIs.
 
-Ranking exists as a separate service, but it is not part of the default intake -> screening -> audit pipeline. It is still triggered on demand through `POST /jobs/{job_id}/rank`.
+Ranking exists as a separate service, but it is not part of the default intake -> skill-assessment -> screening -> audit pipeline. It is still triggered on demand through `POST /jobs/{job_id}/rank`.
 
 
 ### For infrastructure progress (AI please don't delete this section as it is maintained by other human)
@@ -84,7 +86,8 @@ To minimize AWS costs when the environment is not in active use (saving ~$3.50/d
 - Agents share a common artifact contract with `payload`, `confidence`, and `explanation`.
 - The coordinator is the system of record for workflow orchestration and persistence.
 - Agent-local shared memory is still present for service-level replay and diagnostics.
-- Resume intake, screening, and audit attempt OpenAI-backed execution when `OPENAI_API_KEY` is configured.
+- Resume intake, skill assessment, screening, and audit attempt OpenAI-backed execution when `OPENAI_API_KEY` is configured.
+- Skill assessment now produces a distinct competency and gap-analysis artifact before screening.
 - Ranking is currently heuristic only.
 - Screening and audit can jointly escalate candidates for human review.
 
@@ -176,6 +179,7 @@ This starts:
 - resume intake on `http://localhost:8001`
 - screening on `http://localhost:8002`
 - audit on `http://localhost:8003`
+- skill assessment on `http://localhost:8005`
 - ranking on `http://localhost:8004`
 - postgres on `localhost:5432`
 

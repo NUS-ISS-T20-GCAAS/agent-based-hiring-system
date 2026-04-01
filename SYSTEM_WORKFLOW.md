@@ -10,13 +10,15 @@ The primary synchronous pipeline is:
 2. The coordinator upserts the job, creates the candidate, and starts a workflow run.
 3. The coordinator sends resume data to the Resume Intake Agent.
 4. The Resume Intake Agent returns a structured candidate profile artifact.
-5. The coordinator sends the parsed profile plus job context to the Screening Agent.
-6. The Screening Agent returns qualification scores, recommendation signals, and review flags.
-7. The coordinator builds an audit payload from current stats, candidates, decisions, and the latest screening result.
-8. The coordinator sends that payload to the Audit Agent.
-9. The Audit Agent returns an audit artifact with risk and review signals.
-10. The coordinator persists all artifacts, updates candidate scores and review state, and marks the workflow run as completed.
-11. The frontend reads jobs, candidates, stats, decision history, and audit output from the coordinator.
+5. The coordinator sends the parsed profile plus job context to the Skill Assessment Agent.
+6. The Skill Assessment Agent returns a competency and gap-analysis artifact with `skills_score`.
+7. The coordinator sends the parsed profile plus job context, along with the skill artifact, to the Screening Agent.
+8. The Screening Agent returns qualification scores, recommendation signals, and review flags.
+9. The coordinator builds an audit payload from current stats, candidates, decisions, and the latest screening result.
+10. The coordinator sends that payload to the Audit Agent.
+11. The Audit Agent returns an audit artifact with risk and review signals.
+12. The coordinator persists all artifacts, updates candidate scores and review state, and marks the workflow run as completed.
+13. The frontend reads jobs, candidates, stats, decision history, and audit output from the coordinator.
 
 The Ranking Agent is separate from this default flow. It is invoked manually through `POST /jobs/{job_id}/rank`.
 
@@ -30,17 +32,20 @@ flowchart TD
     C --> E["Resume Intake Agent"]
     E --> F["resume_intake_result artifact"]
     F --> C
-    C --> G["Screening Agent"]
-    G --> H["qualification_screening_result artifact"]
+    C --> G["Skill Assessment Agent"]
+    G --> H["skill_assessment_result artifact"]
     H --> C
-    C --> I["Audit Agent"]
-    I --> J["audit_bias_check_result artifact"]
+    C --> I["Screening Agent"]
+    I --> J["qualification_screening_result artifact"]
     J --> C
-    C --> K["Postgres<br/>artifacts + candidate state"]
-    C --> L["Read APIs"]
-    L --> B
-    C -. manual .-> M["Ranking Agent"]
-    M -. candidate_ranking_result .-> C
+    C --> K["Audit Agent"]
+    K --> L["audit_bias_check_result artifact"]
+    L --> C
+    C --> M["Postgres<br/>artifacts + candidate state"]
+    C --> N["Read APIs"]
+    N --> B
+    C -. manual .-> O["Ranking Agent"]
+    O -. candidate_ranking_result .-> C
 ```
 
 ## 3. Entry Points
@@ -143,11 +148,40 @@ Execution mode:
 - OpenAI-backed when configured
 - heuristic fallback otherwise
 
-### Step 5: Screening Agent
+### Step 5: Skill Assessment Agent
 
 Input:
 
 - parsed resume payload from intake
+- `resume_text`
+- `job_description`
+- structured `job_requirements`
+
+Output artifact:
+
+- type: `skill_assessment_result`
+- payload includes:
+  - `skills_score`
+  - `matched_required_skills`
+  - `matched_preferred_skills`
+  - `missing_required_skills`
+  - `missing_preferred_skills`
+  - `detected_soft_skills`
+  - `strengths`
+  - `gaps`
+  - `gap_analysis`
+
+Execution mode:
+
+- OpenAI-backed when configured
+- heuristic fallback otherwise
+
+### Step 6: Screening Agent
+
+Input:
+
+- parsed resume payload from intake
+- skill assessment payload from the previous step
 - `job_description`
 - structured `job_requirements`
 
@@ -165,7 +199,7 @@ Output artifact:
 
 Review flags are raised when the result is borderline, low-confidence, or produced through heuristic fallback.
 
-### Step 6: Audit Agent
+### Step 7: Audit Agent
 
 The coordinator builds audit input from:
 
@@ -184,12 +218,12 @@ Output artifact:
   - `review_required`
   - `recommendations`
 
-### Step 7: Candidate completion and review state
+### Step 8: Candidate completion and review state
 
 After audit completes, the coordinator:
 
-- persists intake, screening, and audit artifacts
-- computes `skills_score`
+- persists intake, skill assessment, screening, and audit artifacts
+- takes `skills_score` from the skill assessment artifact
 - computes `composite_score`
 - updates candidate `status` and `recommendation`
 - combines screening and audit review signals into:
@@ -205,15 +239,15 @@ Default coordinator status mapping from screening:
 - `meets_threshold = true` -> `SHORTLIST` / `shortlisted`
 - `meets_threshold = false` -> `REJECT` / `rejected`
 
-### Step 8: Manual ranking
+### Step 9: Manual ranking
 
 When `POST /jobs/{job_id}/rank` is called, the coordinator:
 
 - fetches all candidates for the job
 - sends them to the Ranking Agent
-- applies returned scores back onto candidate rows
+- stores manual ranking metadata back onto candidate rows
 
-The ranking agent is currently heuristic and updates candidate `composite_score`, `recommendation`, and `status`.
+The ranking agent is currently heuristic, but it does not overwrite screening/audit decisions or candidate composite scores.
 
 ## 5. Data Model
 
@@ -231,6 +265,10 @@ Relevant schema additions in the current migration set:
 - `candidates.review_status`
 - `candidates.review_reasons`
 - `candidates.escalation_source`
+- `candidates.rank_position`
+- `candidates.ranking_score`
+- `candidates.ranking_method`
+- `workflow_queue`
 
 ## 6. Frontend Reality Check
 
@@ -243,4 +281,4 @@ The dashboard is wired to coordinator read APIs for:
 - agent health
 - audit bias checks
 
-The frontend also attempts a WebSocket connection to `/ws`, but there is no WebSocket endpoint in the coordinator service yet. Real-time activity in the UI is therefore not currently backed by the backend.
+The frontend connects to the coordinator WebSocket endpoint at `/ws` for live activity updates while uploads are processing.

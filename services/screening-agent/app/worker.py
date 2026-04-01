@@ -131,6 +131,73 @@ def heuristic_screen_candidate(
     }
 
 
+def screen_with_skill_assessment(
+    *,
+    parsed_resume: dict,
+    job_requirements: dict | None,
+    skill_assessment: dict | None,
+) -> dict:
+    """
+    Use the dedicated skill-assessment artifact as the skill signal source while
+    keeping screening responsible for pass/fail qualification decisions.
+    """
+    job_requirements = job_requirements or {}
+    skill_assessment = skill_assessment or {}
+
+    years_experience = parsed_resume.get("years_experience") or 0
+    skill_score = skill_assessment.get("skills_score")
+    try:
+        skill_score = float(skill_score or 0.0)
+    except (TypeError, ValueError):
+        skill_score = 0.0
+    skill_score = max(0.0, min(1.0, skill_score))
+
+    min_years = job_requirements.get("min_years_experience")
+    if isinstance(years_experience, (int, float)):
+        if isinstance(min_years, (int, float)) and min_years > 0:
+            experience_score = min(1.0, years_experience / min_years)
+        else:
+            experience_score = min(1.0, years_experience / 8)
+    else:
+        experience_score = 0.0
+
+    qualification_score = round((skill_score * 0.8) + (experience_score * 0.2), 3)
+    meets_threshold = qualification_score >= QUALIFICATION_THRESHOLD
+
+    matched_required = _normalize_skill_list(skill_assessment.get("matched_required_skills"))
+    matched_preferred = _normalize_skill_list(skill_assessment.get("matched_preferred_skills"))
+    missing_required = _normalize_skill_list(skill_assessment.get("missing_required_skills"))
+    missing_preferred = _normalize_skill_list(skill_assessment.get("missing_preferred_skills"))
+
+    matched_skills = matched_required + [skill for skill in matched_preferred if skill not in matched_required]
+    missing_skills = missing_required + [skill for skill in missing_preferred if skill not in missing_required]
+
+    confidence = skill_assessment.get("confidence")
+    try:
+        confidence = float(confidence or 0.0)
+    except (TypeError, ValueError):
+        confidence = 0.5
+    confidence = max(0.0, min(1.0, confidence))
+
+    explanation = (
+        "Screening used the dedicated skill-assessment artifact for competency coverage. "
+        f"Score={qualification_score:.1%} (skills={skill_score:.1%}, experience={experience_score:.1%}). "
+        f"Matched {len(matched_required)}/{len(matched_required) + len(missing_required) or 1} required skills"
+        f"{f' and {len(matched_preferred)}/{len(matched_preferred) + len(missing_preferred)} preferred skills' if matched_preferred or missing_preferred else ''}. "
+        f"Years experience={years_experience}; threshold={QUALIFICATION_THRESHOLD:.0%}."
+    )
+
+    return {
+        "qualification_score": qualification_score,
+        "meets_threshold": meets_threshold,
+        "matched_skills": matched_skills,
+        "missing_skills": missing_skills[:10],
+        "years_experience": years_experience if isinstance(years_experience, (int, float)) else 0,
+        "confidence": confidence,
+        "explanation": explanation,
+    }
+
+
 def coerce_screening_result(result: dict) -> dict:
     """
     Normalize and validate LLM screening result

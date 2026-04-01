@@ -1,13 +1,13 @@
 # Next Step Plan
 
-This roadmap is aligned to the current codebase state as of 2026-03-31.
+This roadmap is aligned to the current codebase state as of 2026-04-01.
 
 ## Demo Goal
 
 Minimum believable finish line:
 
 - reliable job creation and resume upload flow
-- persisted intake, screening, and audit artifacts
+- persisted intake, skill assessment, screening, and audit artifacts
 - visible explanations and review state in the UI
 - optional ranking that is easy to explain
 - clear story for health and live activity
@@ -17,7 +17,8 @@ Minimum believable finish line:
 Already working:
 
 - coordinator persists jobs, candidates, workflow runs, and artifacts
-- resume intake, screening, audit, and ranking run as independent services
+- resume intake, skill assessment, screening, audit, and ranking run as independent services
+- skill assessment now runs as an independent service between intake and screening
 - job creation is metadata-only through `POST /jobs/create`
 - screening emits `needs_human_review` and `review_reasons`
 - audit emits `review_required`, `risk_level`, and recommendations
@@ -33,6 +34,7 @@ Current gaps:
 - ranking is manual-only and should remain a separate layer from screening/audit decisions
 - uploads now enqueue into a Postgres-backed worker, but there is not yet a separate multi-process queue stack such as Redis/Celery
 - heuristic extraction and explanations still have room to improve
+- the new skill-assessment artifact is heuristic-first and can be upgraded later with richer model-backed competency analysis
 
 ## Package To Add
 

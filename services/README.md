@@ -7,6 +7,7 @@ This directory contains the local backend service stack for the hiring system.
 - `coordinator-agent`
 - `resume-intake-agent`
 - `screening-agent`
+- `skill-assessment-agent`
 - `audit-agent`
 - `ranking-agent`
 - `postgres`
@@ -33,9 +34,10 @@ The default coordinator path is:
 3. coordinator worker claims queued jobs
 4. bootstrap job, candidate, and workflow state
 5. call resume intake
-6. call screening
-7. call audit
-8. persist artifacts and update candidate state
+6. call skill assessment
+7. call screening
+8. call audit
+9. persist artifacts and update candidate state
 
 Ranking is available as a separate manual step through `POST /jobs/{job_id}/rank`.
 
@@ -52,6 +54,7 @@ Ports:
 - coordinator: `8000`
 - resume intake: `8001`
 - screening: `8002`
+- skill assessment: `8005`
 - audit: `8003`
 - ranking: `8004`
 - postgres: `5432`
@@ -72,6 +75,7 @@ Relevant local environment variables:
 - `OPENAI_MODEL`
 - `RESUME_INTAKE_AGENT_URL`
 - `SCREENING_AGENT_URL`
+- `SKILL_ASSESSMENT_AGENT_URL`
 - `RANKING_AGENT_URL`
 - `AUDIT_AGENT_URL`
 - `REQUEST_TIMEOUT`
@@ -84,7 +88,8 @@ Relevant local environment variables:
 
 Behavior notes:
 
-- Resume intake, screening, and audit use OpenAI when configured and fall back when unavailable.
+- Resume intake, skill assessment, screening, and audit use OpenAI when configured and fall back when unavailable.
+- Skill assessment focuses on competency/gap analysis rather than pass/fail decisions.
 - Ranking is heuristic only in the current codebase.
 - Coordinator health now includes queue worker state and workflow queue counts when the database is reachable.
 

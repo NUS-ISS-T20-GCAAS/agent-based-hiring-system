@@ -1,6 +1,10 @@
 from app.base_agent import BaseAgent
 from app.llm import ScreeningLLM
-from app.worker import coerce_screening_result, heuristic_screen_candidate
+from app.worker import (
+    coerce_screening_result,
+    heuristic_screen_candidate,
+    screen_with_skill_assessment,
+)
 from app.config import QUALIFICATION_THRESHOLD, REVIEW_BAND, REVIEW_CONFIDENCE_FLOOR
 
 
@@ -56,49 +60,63 @@ class ScreeningAgent(BaseAgent):
         parsed_resume = input_data.get("parsed_resume") or {}
         job_description = (input_data.get("job_description") or "").lower()
         job_requirements = input_data.get("job_requirements") or {}
+        skill_assessment = input_data.get("skill_assessment") or {}
 
         # Track which method was used
         method_used = "llm"
-        
-        try:
-            # Try LLM-powered screening first
-            self.logger.info(
-                "screening_llm_attempt",
-                candidate_skills=parsed_resume.get("skills", []),
-                job_desc_length=len(job_description)
-            )
-            
-            llm_result = self.llm.score_candidate(
+
+        if skill_assessment:
+            method_used = "skill_assessment_supported"
+            result = screen_with_skill_assessment(
                 parsed_resume=parsed_resume,
-                job_description=job_description,
-                job_requirements=job_requirements
+                job_requirements=job_requirements,
+                skill_assessment=skill_assessment,
             )
-            
-            result = coerce_screening_result(llm_result)
-            
             self.logger.info(
-                "screening_llm_success",
+                "screening_skill_assessment_used",
                 qualification_score=result["qualification_score"],
-                meets_threshold=result["meets_threshold"]
+                meets_threshold=result["meets_threshold"],
             )
-            
-        except Exception as exc:
-            # Fallback to rule-based heuristic
-            method_used = "heuristic"
-            
-            self.logger.error("screening_llm_fallback", error=str(exc))
-            
-            result = heuristic_screen_candidate(
-                parsed_resume=parsed_resume,
-                job_description=job_description,
-                job_requirements=job_requirements
-            )
-            
-            self.logger.info(
-                "screening_heuristic_used",
-                qualification_score=result["qualification_score"],
-                meets_threshold=result["meets_threshold"]
-            )
+        else:
+            try:
+                # Try LLM-powered screening first
+                self.logger.info(
+                    "screening_llm_attempt",
+                    candidate_skills=parsed_resume.get("skills", []),
+                    job_desc_length=len(job_description)
+                )
+
+                llm_result = self.llm.score_candidate(
+                    parsed_resume=parsed_resume,
+                    job_description=job_description,
+                    job_requirements=job_requirements
+                )
+
+                result = coerce_screening_result(llm_result)
+
+                self.logger.info(
+                    "screening_llm_success",
+                    qualification_score=result["qualification_score"],
+                    meets_threshold=result["meets_threshold"]
+                )
+
+            except Exception as exc:
+                # Fallback to rule-based heuristic
+                method_used = "heuristic"
+
+                self.logger.error("screening_llm_fallback", error=str(exc))
+
+                result = heuristic_screen_candidate(
+                    parsed_resume=parsed_resume,
+                    job_description=job_description,
+                    job_requirements=job_requirements
+                )
+
+                self.logger.info(
+                    "screening_heuristic_used",
+                    qualification_score=result["qualification_score"],
+                    meets_threshold=result["meets_threshold"]
+                )
 
         # Enhance result with additional decision info
         decision = "PASS" if result["meets_threshold"] else "FAIL"

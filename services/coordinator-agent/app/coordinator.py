@@ -8,7 +8,13 @@ from fastapi import HTTPException
 from app.events import emit_agent_activity, emit_candidate_update
 from app.schemas import JobRequest, JobResponse, RunRequest, Artifact
 from app.logger import get_logger
-from app.config import AUDIT_AGENT_URL, RESUME_INTAKE_AGENT_URL, SCREENING_AGENT_URL, REQUEST_TIMEOUT
+from app.config import (
+    AUDIT_AGENT_URL,
+    RESUME_INTAKE_AGENT_URL,
+    SCREENING_AGENT_URL,
+    SKILL_ASSESSMENT_AGENT_URL,
+    REQUEST_TIMEOUT,
+)
 from app.repository import CoordinatorRepository
 
 logger = get_logger("coordinator")
@@ -35,6 +41,22 @@ def _screening_status(screening_payload: dict | None) -> tuple[str, str]:
     recommendation = "SHORTLIST" if meets_threshold else "REJECT"
     status = "shortlisted" if meets_threshold else "rejected"
     return status, recommendation
+
+
+def _skill_score(skill_assessment_payload: dict | None, screening_payload: dict | None) -> float:
+    skill_assessment_payload = skill_assessment_payload or {}
+    screening_payload = screening_payload or {}
+
+    try:
+        score = float(skill_assessment_payload.get("skills_score"))
+        return max(0.0, min(1.0, score))
+    except (TypeError, ValueError):
+        pass
+
+    matched = screening_payload.get("matched_skills") or []
+    missing = screening_payload.get("missing_skills") or []
+    denominator = len(matched) + len(missing)
+    return 0.0 if denominator == 0 else len(matched) / denominator
 
 
 def _normalize_reason(reason: object) -> str | None:
@@ -115,10 +137,15 @@ def _build_audit_input(
     repository: CoordinatorRepository,
     job_id: str,
     candidate_id: str,
+    skill_assessment_payload: dict | None,
     screening_payload: dict | None,
 ) -> dict:
     screening_payload = screening_payload if isinstance(screening_payload, dict) else {}
+    skill_assessment_payload = skill_assessment_payload if isinstance(skill_assessment_payload, dict) else {}
     candidate_status, recommendation = _screening_status(screening_payload)
+    skill_score = _skill_score(skill_assessment_payload, screening_payload)
+    qualification_score = float(screening_payload.get("qualification_score") or 0.0)
+    composite_score = round((qualification_score * 0.7) + (skill_score * 0.3), 4)
 
     stats = repository.get_stats(job_id=job_id)
     if screening_payload.get("meets_threshold"):
@@ -135,9 +162,9 @@ def _build_audit_input(
             candidate["status"] = candidate_status
             candidate["recommendation"] = recommendation
             candidate["scores"] = {
-                "qualification": screening_payload.get("qualification_score") or 0.0,
-                "skills": candidate.get("skills_score") or 0.0,
-                "composite": candidate.get("composite_score") or 0.0,
+                "qualification": qualification_score,
+                "skills": skill_score,
+                "composite": composite_score,
             }
         patched_candidates.append(candidate)
 
@@ -300,6 +327,47 @@ def run_job(
             candidate_id=candidate_id,
         )
 
+        current_step = "skill-assessment"
+        repository.update_workflow_step(run_id=run_id, current_step=current_step)
+
+        skill_assessment_request = RunRequest(
+            entity_id=entity_id,
+            correlation_id=correlation_id,
+            input_data={
+                "job_description": request.job_description,
+                "parsed_resume": intake_artifact.payload,
+                "resume_text": request.resume_text,
+                "job_requirements": job_requirements,
+            },
+        )
+
+        emit_agent_activity(
+            agent="skill-assessment",
+            message="Starting skill assessment",
+            correlation_id=correlation_id,
+            entity_id=entity_id,
+            candidate_id=candidate_id,
+        )
+        skill_assessment_artifact = _post_with_retries(
+            target="skill-assessment",
+            url=f"{SKILL_ASSESSMENT_AGENT_URL}/run",
+            run_req=skill_assessment_request,
+            entity_id=entity_id,
+            correlation_id=correlation_id,
+        )
+        repository.save_artifact(
+            job_id=entity_id,
+            candidate_id=candidate_id,
+            artifact=skill_assessment_artifact,
+        )
+        emit_agent_activity(
+            agent="skill-assessment",
+            message="Skill assessment completed",
+            correlation_id=correlation_id,
+            entity_id=entity_id,
+            candidate_id=candidate_id,
+        )
+
         current_step = "screening"
         repository.update_workflow_step(run_id=run_id, current_step=current_step)
 
@@ -310,6 +378,7 @@ def run_job(
                 "job_description": request.job_description,
                 "parsed_resume": intake_artifact.payload,
                 "job_requirements": job_requirements,
+                "skill_assessment": skill_assessment_artifact.payload,
             },
         )
 
@@ -350,6 +419,7 @@ def run_job(
                 repository=repository,
                 job_id=entity_id,
                 candidate_id=candidate_id,
+                skill_assessment_payload=skill_assessment_artifact.payload if isinstance(skill_assessment_artifact.payload, dict) else None,
                 screening_payload=screening_artifact.payload if isinstance(screening_artifact.payload, dict) else None,
             ),
         )
@@ -382,6 +452,7 @@ def run_job(
             candidate_id=candidate_id,
             run_id=run_id,
             intake_payload=intake_artifact.payload if isinstance(intake_artifact.payload, dict) else None,
+            skill_payload=skill_assessment_artifact.payload if isinstance(skill_assessment_artifact.payload, dict) else None,
             screening_payload=screening_artifact.payload if isinstance(screening_artifact.payload, dict) else None,
             review_state=review_state,
         )
@@ -474,7 +545,12 @@ def run_job(
         entity_id=entity_id,
         correlation_id=correlation_id,
         candidate_id=candidate_id,
-        artifacts=[intake_artifact.artifact_id, screening_artifact.artifact_id, audit_artifact.artifact_id],
+        artifacts=[
+            intake_artifact.artifact_id,
+            skill_assessment_artifact.artifact_id,
+            screening_artifact.artifact_id,
+            audit_artifact.artifact_id,
+        ],
     )
 
     return JobResponse(

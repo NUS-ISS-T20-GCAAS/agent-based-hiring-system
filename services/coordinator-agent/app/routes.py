@@ -18,6 +18,7 @@ from app.config import (
     REQUEST_TIMEOUT,
     RESUME_INTAKE_AGENT_URL,
     SCREENING_AGENT_URL,
+    SKILL_ASSESSMENT_AGENT_URL,
 )
 from app.logger import get_logger
 
@@ -596,6 +597,7 @@ def get_agent_status():
     checks = [
         ("coordinator", "http://localhost:8000/health"),
         ("resume-intake", f"{RESUME_INTAKE_AGENT_URL}/health"),
+        ("skill-assessment", f"{SKILL_ASSESSMENT_AGENT_URL}/health"),
         ("screening", f"{SCREENING_AGENT_URL}/health"),
         ("ranking", f"{RANKING_AGENT_URL}/health"),
         ("audit", f"{AUDIT_AGENT_URL}/health"),

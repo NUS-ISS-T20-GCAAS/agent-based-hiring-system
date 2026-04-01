@@ -55,6 +55,7 @@ export const titleCase = (value) => {
 export const formatDecisionType = (decisionType) => {
   const labels = {
     resume_intake_result: 'Resume Intake',
+    skill_assessment_result: 'Skill Assessment',
     qualification_screening_result: 'Qualification Screening',
     audit_bias_check_result: 'Audit Review',
     candidate_ranking_result: 'Manual Ranking',
@@ -69,6 +70,11 @@ export const getDecisionTheme = (decisionType) => {
       border: 'border-sky-500',
       badge: 'bg-sky-50 text-sky-700 border-sky-200',
       chip: 'bg-sky-50 text-sky-700 border-sky-200',
+    },
+    skill_assessment_result: {
+      border: 'border-cyan-500',
+      badge: 'bg-cyan-50 text-cyan-700 border-cyan-200',
+      chip: 'bg-cyan-50 text-cyan-700 border-cyan-200',
     },
     qualification_screening_result: {
       border: 'border-blue-500',
