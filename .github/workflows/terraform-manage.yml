@@ -234,36 +234,37 @@ jobs:
         run: terraform init
         working-directory: ${{ env.TF_DIR }}
 
-      - name: Reconcile Route State
+      - name: Clean Up Stale NAT Route (if any)
         run: |
-          echo "🔧 Checking if aws_route.private_nat needs importing..."
+          echo "🔧 Checking for stale 0.0.0.0/0 route in private route table..."
 
-          # Check if the resource already exists in Terraform state
-          if terraform state show aws_route.private_nat >/dev/null 2>&1; then
-            echo "✅ aws_route.private_nat already in state — no action needed."
-          else
-            # Get the private route table ID from state
-            RT_ID=$(terraform state show aws_route_table.private 2>/dev/null | grep '^  id' | awk -F'"' '{print $2}' || echo "")
+          # Find the private route table by its Name tag
+          RT_ID=$(aws ec2 describe-route-tables \
+            --filters "Name=tag:Name,Values=hiring-system-${{ github.event.inputs.environment }}-private-rt" \
+            --query "RouteTables[0].RouteTableId" \
+            --output text 2>/dev/null || echo "None")
 
-            if [ -n "$RT_ID" ]; then
-              # Check if the route exists in AWS
-              ROUTE_EXISTS=$(aws ec2 describe-route-tables \
-                --route-table-ids "$RT_ID" \
-                --query "RouteTables[0].Routes[?DestinationCidrBlock=='0.0.0.0/0' && NatGatewayId!=null]" \
-                --output text 2>/dev/null || echo "")
+          if [ "$RT_ID" != "None" ] && [ -n "$RT_ID" ]; then
+            echo "Found private route table: $RT_ID"
 
-              if [ -n "$ROUTE_EXISTS" ] && [ "$ROUTE_EXISTS" != "None" ]; then
-                echo "📦 Found existing 0.0.0.0/0 route in $RT_ID — importing into state..."
-                terraform import aws_route.private_nat "${RT_ID}_0.0.0.0/0"
-                echo "✅ Imported successfully."
-              else
-                echo "ℹ️ No existing NAT route found in AWS — Terraform will create it."
-              fi
+            # Check if theres an existing 0.0.0.0/0 route
+            EXISTING_ROUTE=$(aws ec2 describe-route-tables \
+              --route-table-ids "$RT_ID" \
+              --query "RouteTables[0].Routes[?DestinationCidrBlock=='0.0.0.0/0'].{GW:GatewayId,NAT:NatGatewayId}" \
+              --output text 2>/dev/null || echo "")
+
+            if [ -n "$EXISTING_ROUTE" ] && [ "$EXISTING_ROUTE" != "None" ]; then
+              echo "⚠️ Found stale 0.0.0.0/0 route — deleting so Terraform can recreate it cleanly..."
+              aws ec2 delete-route \
+                --route-table-id "$RT_ID" \
+                --destination-cidr-block "0.0.0.0/0" 2>/dev/null || true
+              echo "✅ Stale route deleted."
             else
-              echo "ℹ️ No route table found in state — Terraform will create everything."
+              echo "✅ No stale route found — Terraform will create it fresh."
             fi
+          else
+            echo "ℹ️ No private route table found — Terraform will create everything."
           fi
-        working-directory: ${{ env.TF_DIR }}
 
       - name: Terraform Plan
         run: |
@@ -339,16 +340,24 @@ jobs:
       - name: Wait for Nodes to be Ready
         run: |
           echo "⏳ Waiting for EKS nodes to become Ready (up to 5 minutes)..."
+          NODES_READY=false
           for i in $(seq 1 30); do
             READY=$(kubectl get nodes --no-headers 2>/dev/null | grep -c " Ready " || true)
             if [ "$READY" -ge 1 ]; then
               echo "✅ $READY node(s) ready!"
               kubectl get nodes
+              NODES_READY=true
               break
             fi
             echo "  Attempt $i/30 — no ready nodes yet, waiting 10s..."
             sleep 10
           done
+
+          if [ "$NODES_READY" != "true" ]; then
+            echo "❌ ERROR: No nodes became ready within 5 minutes."
+            echo "   Check the EKS console for node group health."
+            exit 1
+          fi
 
       - name: Download Saved Image Tags
         id: download-tags
@@ -426,18 +435,18 @@ jobs:
           OPENAI_KEY="${{ secrets.OPENAI_API_KEY }}"
 
           cat > ${{ env.TF_DIR }}/k8s/secrets.yaml <<EOF
-          apiVersion: v1
-          kind: Secret
-          metadata:
-            name: hiring-system-secrets
-            namespace: services
-          type: Opaque
-          data:
-            openai-api-key: $(echo -n "$OPENAI_KEY" | base64 -w0)
-            db-host: $(echo -n "$RDS_HOST" | base64 -w0)
-            db-username: $(echo -n "$DB_USER" | base64 -w0)
-            db-password: $(echo -n "$DB_PASS" | base64 -w0)
-          EOF
+apiVersion: v1
+kind: Secret
+metadata:
+  name: hiring-system-secrets
+  namespace: services
+type: Opaque
+data:
+  openai-api-key: $(echo -n "$OPENAI_KEY" | base64 -w0)
+  db-host: $(echo -n "$RDS_HOST" | base64 -w0)
+  db-username: $(echo -n "$DB_USER" | base64 -w0)
+  db-password: $(echo -n "$DB_PASS" | base64 -w0)
+EOF
 
       - name: Apply K8s Manifests
         run: |
