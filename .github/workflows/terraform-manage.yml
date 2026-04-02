@@ -283,19 +283,61 @@ jobs:
             && echo "  ✅ Deleted stale 0.0.0.0/0 route from AWS." \
             || echo "  ℹ️  No 0.0.0.0/0 route exists (already clean)."
 
-          # ── Step 3: Fix Terraform state ──
-          # The old state may have an inline route{} block inside aws_route_table.private.
-          # Re-import the route table so state matches current AWS reality (no inline route).
+          # ── Step 3: Fix Terraform state (no terraform import — avoids config evaluation) ──
+          # Pull state as JSON, clear inline routes from aws_route_table.private, push back.
+          # This avoids 'terraform import' which would fail on for_each dependencies
+          # when the EKS cluster doesn't exist yet.
           echo ""
-          echo "  Re-importing route table to sync Terraform state..."
-          terraform state rm aws_route_table.private 2>/dev/null || true
-          terraform import \
-            -var="environment=${{ github.event.inputs.environment }}" \
-            aws_route_table.private "$RT_ID"
-          echo "  ✅ Route table state synced."
+          echo "  Patching Terraform state to remove inline route from route table..."
+          terraform state pull > /tmp/tfstate.json
+
+          python3 -c "
+          import json, sys
+
+          with open('/tmp/tfstate.json', 'r') as f:
+              state = json.load(f)
+
+          modified = False
+          for resource in state.get('resources', []):
+              if resource.get('type') == 'aws_route_table' and resource.get('name') == 'private':
+                  for instance in resource.get('instances', []):
+                      attrs = instance.get('attributes', {})
+                      if attrs.get('route') and len(attrs['route']) > 0:
+                          print(f'  Found {len(attrs[\"route\"])} inline route(s) in state — clearing...')
+                          attrs['route'] = []
+                          modified = True
+                      else:
+                          print('  No inline routes in state — already clean.')
+
+          if modified:
+              # Increment the serial number (required for state push)
+              state['serial'] = state.get('serial', 0) + 1
+              with open('/tmp/tfstate.json', 'w') as f:
+                  json.dump(state, f, indent=2)
+              print('  State patched successfully.')
+          else:
+              print('  No state changes needed.')
+          "
+
+          # Push the modified state back (only if it was modified)
+          if python3 -c "
+          import json
+          with open('/tmp/tfstate.json') as f:
+              s = json.load(f)
+          for r in s.get('resources', []):
+              if r.get('type') == 'aws_route_table' and r.get('name') == 'private':
+                  for i in r.get('instances', []):
+                      if len(i.get('attributes', {}).get('route', [])) == 0:
+                          exit(0)
+          exit(1)
+          " 2>/dev/null; then
+            terraform state push /tmp/tfstate.json
+            echo "  ✅ State pushed successfully."
+          fi
+
+          rm -f /tmp/tfstate.json
 
           # Also remove any stale aws_route.private_nat from state if it exists
-          # (it shouldn't after destroy, but just in case)
           terraform state rm aws_route.private_nat 2>/dev/null || true
 
           echo ""
