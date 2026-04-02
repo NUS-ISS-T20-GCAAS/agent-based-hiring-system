@@ -138,6 +138,29 @@ jobs:
           path: ${{ env.TF_DIR }}/image-tags.json
           retention-days: 90
 
+      - name: Delete K8s LoadBalancer Services (prevent orphaned LBs)
+        run: |
+          echo "🧹 Deleting K8s LoadBalancer services before EKS destroy..."
+          echo "   This lets the AWS Cloud Controller clean up Load Balancers."
+          echo ""
+
+          EKS_CLUSTER=$(terraform output -raw eks_cluster_name 2>/dev/null || echo "")
+          if [ -n "$EKS_CLUSTER" ]; then
+            aws eks update-kubeconfig --name "$EKS_CLUSTER" --region ${{ env.AWS_REGION }} 2>/dev/null || true
+
+            # Delete all LoadBalancer-type services to avoid orphaned LBs
+            echo "  Deleting frontend LoadBalancer service..."
+            kubectl delete svc --all -n frontend --ignore-not-found=true 2>/dev/null || true
+
+            # Wait for AWS to finish deprovisioning the Load Balancer
+            echo "  Waiting 30s for AWS to deprovision Load Balancer..."
+            sleep 30
+            echo "  ✅ LoadBalancer cleanup complete."
+          else
+            echo "  ℹ️ No EKS cluster in state — skipping LB cleanup."
+          fi
+        working-directory: ${{ env.TF_DIR }}
+
       - name: Terraform Targeted Destroy
         run: |
           echo "🔴 Destroying ONLY expensive resources for environment: ${{ github.event.inputs.environment }}"
