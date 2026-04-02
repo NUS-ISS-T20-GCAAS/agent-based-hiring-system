@@ -1,9 +1,6 @@
 name: Build Services
 
 on:
-  push:
-    branches: [ main ]
-  pull_request:
   workflow_call:
     inputs:
       services:
@@ -11,20 +8,6 @@ on:
         type: string
         required: false
         default: ''
-  workflow_dispatch:
-    inputs:
-      services:
-        description: 'Select service(s) to build'
-        type: choice
-        options:
-          - all
-          - coordinator-agent
-          - resume-intake-agent
-          - screening-agent
-          - ranking-agent
-          - audit-agent
-        required: true
-        default: 'all'
 
 jobs:
   detect-changes:
@@ -36,37 +19,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Detect changed services (push / PR only)
-      - name: Detect service changes
-        uses: dorny/paths-filter@v3
-        id: filter
-        if: github.event_name != 'workflow_dispatch'
-        with:
-          list-files: json
-          filters: |
-            coordinator-agent:
-              - services/coordinator-agent/**
-            resume-intake-agent:
-              - services/resume-intake-agent/**
-            screening-agent:
-              - services/screening-agent/**
-            ranking-agent:
-              - services/ranking-agent/**
-            audit-agent:
-              - services/audit-agent/**
-
       # Decide final service list (SINGLE source of truth)
       - name: Set services list
         id: set-services
         shell: bash
         run: |
-          # 1. Grab services from workflow_call inputs first
-          if [ -n "${{ inputs.services }}" ]; then
-            SERVICES="${{ inputs.services }}"
-          # 2. Or grab from manual workflow_dispatch inputs
-          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            SERVICES="${{ github.event.inputs.services }}"
-          fi
+          SERVICES="${{ inputs.services }}"
 
           if [ -n "$SERVICES" ]; then
             # Handle the "all" option explicitly
@@ -77,15 +35,8 @@ jobs:
             # Format the output for the matrix array
             JSON=$(printf '["%s"]' "${SERVICES//,/\",\"}")
             echo "services=$JSON" >> $GITHUB_OUTPUT
-
           else
-            SERVICES='${{ steps.filter.outputs.changes }}'
-
-            if [ "$SERVICES" = "[]" ] || [ -z "$SERVICES" ]; then
-              echo "services=[]" >> $GITHUB_OUTPUT
-            else
-              echo "services=$SERVICES" >> $GITHUB_OUTPUT
-            fi
+            echo "services=[]" >> $GITHUB_OUTPUT
           fi
 
       - name: Debug services

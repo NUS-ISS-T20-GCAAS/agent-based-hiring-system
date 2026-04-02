@@ -353,7 +353,11 @@ kubectl run db-init --rm -it --image=postgres:15 -n services -- \
 ## Tear Down
 
 ```bash
-# Remove K8s resources first
+# Delete LoadBalancer-type services to avoid orphaned AWS ALBs/Classic LBs ($0.54/day)
+kubectl delete svc --all -n frontend --ignore-not-found=true
+sleep 30
+
+# Remove all other K8s resources
 kubectl delete -f k8s/
 
 # Destroy all AWS resources
@@ -366,7 +370,7 @@ terraform destroy -var-file=terraform.tfvars
 
 Deploy via GitHub Actions using `.github/workflows/terraform.yml`.
 
-### Pipeline Structure
+### Main Infrastructure Pipeline (`terraform.yml`)
 
 ```mermaid
 graph LR
@@ -377,6 +381,14 @@ graph LR
 ```
 
 All jobs run **automatically end-to-end** when triggered — no environment approval gates needed.
+
+### Cost Optimization Pipeline (`terraform-manage.yml`)
+
+A specialized, integrated workflow designed to reduce dev environment costs by destroying expensive resources over weekends/nights:
+
+1. **Destroy Job**: Captures live image tags (saves to artifacts), deletes `frontend` LoadBalancer service (prevents orphaned AWS LBs), and destroys EKS Control Plane, Node Groups, Fargate, and NAT Gateway (~$4.14/day savings). Retains RDS, ECR, VPC, and IAM.
+2. **Recreate Job**: Paused securely behind a GitHub Environment approval gate. Upon manual approval, creates the infrastructure back.
+3. **Deploy K8s**: Restores all K8s deployments automatically matching the exact image tags captured prior to destruction.
 
 ### Setup
 
