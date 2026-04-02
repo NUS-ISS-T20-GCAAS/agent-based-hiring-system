@@ -18,6 +18,8 @@ function App() {
   const [selectedJob, setSelectedJob] = useState(null);
   const [processing, setProcessing] = useState(false);
   const [agentActivity, setAgentActivity] = useState([]);
+  const [handoffTrace, setHandoffTrace] = useState([]);
+  const [handoffsLoading, setHandoffsLoading] = useState(false);
   const [selectedCandidate, setSelectedCandidate] = useState(null);
   const [stats, setStats] = useState({
     total_candidates: 0,
@@ -51,8 +53,36 @@ function App() {
     if (selectedJob) {
       fetchCandidates();
       fetchStats();
+      fetchJobHandoffs(selectedJob);
+    } else {
+      setHandoffTrace([]);
     }
   }, [selectedJob]);
+
+  const mergeHandoffEvent = (currentTrace, nextEvent) => {
+    if (!nextEvent) {
+      return currentTrace;
+    }
+
+    const eventId = nextEvent.event_id || `${nextEvent.timestamp}-${nextEvent.stage}-${nextEvent.direction}`;
+    if (currentTrace.some((item) => item.event_id === eventId)) {
+      return currentTrace;
+    }
+
+    return [...currentTrace, nextEvent].sort((left, right) => {
+      const leftTime = new Date(left.timestamp || 0).getTime();
+      const rightTime = new Date(right.timestamp || 0).getTime();
+      if (leftTime !== rightTime) {
+        return leftTime - rightTime;
+      }
+
+      if (left.direction === right.direction) {
+        return 0;
+      }
+
+      return left.direction === 'request' ? -1 : 1;
+    });
+  };
 
   // WebSocket connection
   const connectWebSocket = () => {
@@ -70,6 +100,13 @@ function App() {
           
           if (message.type === 'agent_activity') {
             setAgentActivity(prev => [message.data, ...prev.slice(0, 49)]);
+            if (
+              message.data?.event_kind === 'handoff' &&
+              message.data?.entity_id &&
+              message.data.entity_id === selectedJobRef.current
+            ) {
+              setHandoffTrace((prev) => mergeHandoffEvent(prev, message.data));
+            }
             const { entity_id: jobId, message: activityMessage, timestamp } = message.data || {};
             if (jobId) {
               setJobRunState((prev) => {
@@ -201,6 +238,30 @@ function App() {
       }
     } catch (error) {
       console.error('Error fetching stats:', error);
+    }
+  };
+
+  const fetchJobHandoffs = async (jobId = selectedJob) => {
+    if (!jobId) {
+      setHandoffTrace([]);
+      return;
+    }
+
+    try {
+      setHandoffsLoading(true);
+      const data = await api.getJobHandoffs(jobId);
+      if (jobId === selectedJobRef.current) {
+        setHandoffTrace(Array.isArray(data) ? data : []);
+      }
+    } catch (error) {
+      console.error('Error fetching handoff trace:', error);
+      if (jobId === selectedJobRef.current) {
+        setHandoffTrace([]);
+      }
+    } finally {
+      if (jobId === selectedJobRef.current) {
+        setHandoffsLoading(false);
+      }
     }
   };
 
@@ -420,6 +481,9 @@ function App() {
         {activeTab === 'agents' && (
           <AgentActivity
             activity={agentActivity}
+            handoffs={handoffTrace}
+            loading={handoffsLoading}
+            selectedJob={selectedJob}
             onClear={handleClearActivity}
           />
         )}

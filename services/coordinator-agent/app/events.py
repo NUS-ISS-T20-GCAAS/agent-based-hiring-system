@@ -86,6 +86,15 @@ def emit_agent_activity(
     correlation_id: str | None = None,
     entity_id: str | None = None,
     candidate_id: str | None = None,
+    event_id: str | None = None,
+    event_kind: str | None = None,
+    stage: str | None = None,
+    direction: str | None = None,
+    from_agent: str | None = None,
+    to_agent: str | None = None,
+    artifact_type: str | None = None,
+    payload_preview: dict[str, Any] | None = None,
+    confidence: float | None = None,
 ) -> None:
     event_hub.publish(
         {
@@ -97,6 +106,15 @@ def emit_agent_activity(
                 "correlation_id": correlation_id,
                 "entity_id": entity_id,
                 "candidate_id": candidate_id,
+                "event_id": event_id,
+                "event_kind": event_kind or "status",
+                "stage": stage,
+                "direction": direction,
+                "from_agent": from_agent,
+                "to_agent": to_agent,
+                "artifact_type": artifact_type,
+                "payload_preview": payload_preview or {},
+                "confidence": confidence,
             },
         }
     )

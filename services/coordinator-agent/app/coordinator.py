@@ -6,6 +6,7 @@ import requests
 from fastapi import HTTPException
 
 from app.events import emit_agent_activity, emit_candidate_update
+from app.handoff_trace import build_request_handoff, build_response_handoff
 from app.schemas import JobRequest, JobResponse, RunRequest, Artifact
 from app.logger import get_logger
 from app.config import (
@@ -231,6 +232,25 @@ def _post_with_retries(
     raise HTTPException(status_code=503, detail=f"{target} unavailable")
 
 
+def _emit_handoff_trace(event: dict) -> None:
+    emit_agent_activity(
+        agent=event.get("from_agent") or event.get("to_agent") or "coordinator",
+        message=event.get("message") or "",
+        correlation_id=event.get("correlation_id"),
+        entity_id=event.get("entity_id"),
+        candidate_id=event.get("candidate_id"),
+        event_id=event.get("event_id"),
+        event_kind=event.get("event_kind"),
+        stage=event.get("stage"),
+        direction=event.get("direction"),
+        from_agent=event.get("from_agent"),
+        to_agent=event.get("to_agent"),
+        artifact_type=event.get("artifact_type"),
+        payload_preview=event.get("payload_preview"),
+        confidence=event.get("confidence"),
+    )
+
+
 def run_job(
     request: JobRequest,
     repository: CoordinatorRepository | None = None,
@@ -307,6 +327,15 @@ def run_job(
             entity_id=entity_id,
             candidate_id=candidate_id,
         )
+        _emit_handoff_trace(
+            build_request_handoff(
+                stage="resume-intake",
+                entity_id=entity_id,
+                candidate_id=candidate_id,
+                correlation_id=correlation_id,
+                input_data=intake_request.input_data,
+            )
+        )
         intake_artifact = _post_with_retries(
             target="resume-intake",
             url=f"{RESUME_INTAKE_AGENT_URL}/run",
@@ -318,6 +347,20 @@ def run_job(
             job_id=entity_id,
             candidate_id=candidate_id,
             artifact=intake_artifact,
+        )
+        _emit_handoff_trace(
+            build_response_handoff(
+                stage="resume-intake",
+                entity_id=entity_id,
+                candidate_id=candidate_id,
+                correlation_id=correlation_id,
+                artifact_id=intake_artifact.artifact_id,
+                artifact_type=intake_artifact.artifact_type,
+                explanation=intake_artifact.explanation,
+                confidence=intake_artifact.confidence,
+                payload=intake_artifact.payload,
+                timestamp=intake_artifact.created_at,
+            )
         )
         emit_agent_activity(
             agent="resume-intake",
@@ -348,6 +391,15 @@ def run_job(
             entity_id=entity_id,
             candidate_id=candidate_id,
         )
+        _emit_handoff_trace(
+            build_request_handoff(
+                stage="skill-assessment",
+                entity_id=entity_id,
+                candidate_id=candidate_id,
+                correlation_id=correlation_id,
+                input_data=skill_assessment_request.input_data,
+            )
+        )
         skill_assessment_artifact = _post_with_retries(
             target="skill-assessment",
             url=f"{SKILL_ASSESSMENT_AGENT_URL}/run",
@@ -359,6 +411,20 @@ def run_job(
             job_id=entity_id,
             candidate_id=candidate_id,
             artifact=skill_assessment_artifact,
+        )
+        _emit_handoff_trace(
+            build_response_handoff(
+                stage="skill-assessment",
+                entity_id=entity_id,
+                candidate_id=candidate_id,
+                correlation_id=correlation_id,
+                artifact_id=skill_assessment_artifact.artifact_id,
+                artifact_type=skill_assessment_artifact.artifact_type,
+                explanation=skill_assessment_artifact.explanation,
+                confidence=skill_assessment_artifact.confidence,
+                payload=skill_assessment_artifact.payload,
+                timestamp=skill_assessment_artifact.created_at,
+            )
         )
         emit_agent_activity(
             agent="skill-assessment",
@@ -389,6 +455,15 @@ def run_job(
             entity_id=entity_id,
             candidate_id=candidate_id,
         )
+        _emit_handoff_trace(
+            build_request_handoff(
+                stage="screening",
+                entity_id=entity_id,
+                candidate_id=candidate_id,
+                correlation_id=correlation_id,
+                input_data=screening_request.input_data,
+            )
+        )
         screening_artifact = _post_with_retries(
             target="screening",
             url=f"{SCREENING_AGENT_URL}/run",
@@ -400,6 +475,20 @@ def run_job(
             job_id=entity_id,
             candidate_id=candidate_id,
             artifact=screening_artifact,
+        )
+        _emit_handoff_trace(
+            build_response_handoff(
+                stage="screening",
+                entity_id=entity_id,
+                candidate_id=candidate_id,
+                correlation_id=correlation_id,
+                artifact_id=screening_artifact.artifact_id,
+                artifact_type=screening_artifact.artifact_type,
+                explanation=screening_artifact.explanation,
+                confidence=screening_artifact.confidence,
+                payload=screening_artifact.payload,
+                timestamp=screening_artifact.created_at,
+            )
         )
         emit_agent_activity(
             agent="screening",
@@ -431,6 +520,15 @@ def run_job(
             entity_id=entity_id,
             candidate_id=candidate_id,
         )
+        _emit_handoff_trace(
+            build_request_handoff(
+                stage="audit",
+                entity_id=entity_id,
+                candidate_id=candidate_id,
+                correlation_id=correlation_id,
+                input_data=audit_request.input_data,
+            )
+        )
         audit_artifact = _post_with_retries(
             target="audit",
             url=f"{AUDIT_AGENT_URL}/run",
@@ -442,6 +540,20 @@ def run_job(
             job_id=entity_id,
             candidate_id=candidate_id,
             artifact=audit_artifact,
+        )
+        _emit_handoff_trace(
+            build_response_handoff(
+                stage="audit",
+                entity_id=entity_id,
+                candidate_id=candidate_id,
+                correlation_id=correlation_id,
+                artifact_id=audit_artifact.artifact_id,
+                artifact_type=audit_artifact.artifact_type,
+                explanation=audit_artifact.explanation,
+                confidence=audit_artifact.confidence,
+                payload=audit_artifact.payload,
+                timestamp=audit_artifact.created_at,
+            )
         )
         review_state = _build_review_state(
             screening_artifact.payload if isinstance(screening_artifact.payload, dict) else None,

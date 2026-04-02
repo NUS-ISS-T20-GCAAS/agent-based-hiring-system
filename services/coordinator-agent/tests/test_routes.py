@@ -16,6 +16,7 @@ from app.routes import (
     create_job,
     delete_candidate,
     get_job_artifacts,
+    get_job_handoffs,
     list_jobs,
     get_job,
     list_candidates,
@@ -488,6 +489,16 @@ class RoutesReadApiTests(unittest.TestCase):
         self.assertEqual(len(artifacts), 3)
         self.assertEqual(artifacts[1]["artifact_type"], "skill_assessment_result")
         self.assertEqual(artifacts[2]["artifact_type"], "audit_bias_check_result")
+
+        handoffs = get_job_handoffs("job-1")
+        self.assertEqual(len(handoffs), 6)
+        self.assertEqual(handoffs[0]["event_kind"], "handoff")
+        self.assertEqual(handoffs[0]["direction"], "request")
+        self.assertEqual(handoffs[0]["from_agent"], "coordinator")
+        self.assertEqual(handoffs[0]["to_agent"], "resume-intake")
+        self.assertEqual(handoffs[1]["direction"], "response")
+        self.assertEqual(handoffs[1]["from_agent"], "resume-intake")
+        self.assertEqual(handoffs[1]["artifact_type"], "resume_intake_result")
 
         stats = get_stats(job_id="job-1")
         self.assertEqual(stats["total_candidates"], 10)

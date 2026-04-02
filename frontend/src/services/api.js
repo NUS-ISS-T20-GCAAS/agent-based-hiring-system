@@ -65,6 +65,13 @@ class ApiService {
   }
 
   /**
+   * Get agent handoff trace for a job
+   */
+  async getJobHandoffs(jobId) {
+    return this.request(`/api/jobs/${jobId}/handoffs`);
+  }
+
+  /**
    * Create new job
    */
   async createJob(jobData) {

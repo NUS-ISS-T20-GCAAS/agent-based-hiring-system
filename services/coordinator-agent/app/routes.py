@@ -9,6 +9,7 @@ import requests
 from app.schemas import Artifact, CreateJobRequest, CreateJobResponse, JobRequest, JobResponse, RunRequest
 from app.coordinator import run_job
 from app.events import emit_agent_activity, emit_candidate_update
+from app.handoff_trace import build_handoff_trace, build_request_handoff, build_response_handoff
 from app.repository import CoordinatorRepository
 from app.resume_parser import ResumeParsingError, extract_resume_text
 
@@ -358,6 +359,31 @@ def rank_job_candidates(job_id: str):
         },
     )
 
+    emit_agent_activity(
+        agent="ranking",
+        message="Starting candidate ranking",
+        entity_id=job_id,
+    )
+    emit_agent_activity(
+        agent="coordinator",
+        message="Please rank the candidates for this job using the current decision context.",
+        entity_id=job_id,
+        correlation_id=run_request.correlation_id,
+        event_id=f"{run_request.correlation_id}:ranking:request",
+        event_kind="handoff",
+        stage="ranking",
+        direction="request",
+        from_agent="coordinator",
+        to_agent="ranking",
+        payload_preview=build_request_handoff(
+            stage="ranking",
+            entity_id=job_id,
+            candidate_id=None,
+            correlation_id=run_request.correlation_id,
+            input_data=run_request.input_data,
+        )["payload_preview"],
+    )
+
     try:
         response = requests.post(
             f"{RANKING_AGENT_URL}/run",
@@ -387,10 +413,38 @@ def rank_job_candidates(job_id: str):
             candidate_id=candidate_id,
             artifact=ranking_artifact,
         )
+    ranking_handoff = build_response_handoff(
+        stage="ranking",
+        entity_id=job_id,
+        candidate_id=None,
+        correlation_id=artifact.correlation_id,
+        artifact_id=artifact.artifact_id,
+        artifact_type=artifact.artifact_type,
+        explanation=artifact.explanation,
+        confidence=artifact.confidence,
+        payload=artifact.payload,
+        timestamp=artifact.created_at,
+    )
     emit_agent_activity(
         agent="ranking",
         message=f"Re-ranked {ranked} candidates for job {job_id}",
         entity_id=job_id,
+    )
+    emit_agent_activity(
+        agent=ranking_handoff["from_agent"],
+        message=ranking_handoff["message"],
+        correlation_id=ranking_handoff["correlation_id"],
+        entity_id=ranking_handoff["entity_id"],
+        candidate_id=ranking_handoff["candidate_id"],
+        event_id=ranking_handoff["event_id"],
+        event_kind=ranking_handoff["event_kind"],
+        stage=ranking_handoff["stage"],
+        direction=ranking_handoff["direction"],
+        from_agent=ranking_handoff["from_agent"],
+        to_agent=ranking_handoff["to_agent"],
+        artifact_type=ranking_handoff["artifact_type"],
+        payload_preview=ranking_handoff["payload_preview"],
+        confidence=ranking_handoff["confidence"],
     )
     emit_candidate_update(job_id=job_id, status="ranking_completed")
     return {
@@ -679,3 +733,11 @@ def get_job_artifacts(job_id: str):
     _job_or_404(repository, job_id)
     rows = repository.list_artifacts(job_id=job_id)
     return [_artifact_payload(row) for row in rows]
+
+
+@router.get("/jobs/{job_id}/handoffs")
+def get_job_handoffs(job_id: str):
+    repository = CoordinatorRepository()
+    _job_or_404(repository, job_id)
+    rows = repository.list_artifacts(job_id=job_id)
+    return build_handoff_trace(rows)
