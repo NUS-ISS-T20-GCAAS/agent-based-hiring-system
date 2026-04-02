@@ -246,6 +246,10 @@ def _build_ranking_candidate_artifacts(
                 "score": score,
                 "scores": item.get("scores") if isinstance(item.get("scores"), dict) else {},
                 "recommendation": recommendation,
+                "recommended_action": item.get("recommended_action") or recommendation,
+                "decision_factors": item.get("decision_factors") if isinstance(item.get("decision_factors"), list) else [],
+                "ranking_summary": item.get("ranking_summary"),
+                "review_state": item.get("review_state") if isinstance(item.get("review_state"), dict) else {},
                 "method": method,
                 "top_candidate_id": top_candidate_id,
                 "total_candidates": total_candidates,
@@ -253,7 +257,8 @@ def _build_ranking_candidate_artifacts(
             confidence=ranking_artifact.confidence,
             explanation=(
                 f"Manual rerank placed {candidate_name} at #{rank} of {total_candidates} "
-                f"using {method} with score {score:.1%}"
+                f"using {method} with score {score:.1%}. "
+                f"Suggested next action: {item.get('recommended_action') or recommendation}."
             ),
             created_at=ranking_artifact.created_at,
             version=ranking_artifact.version,

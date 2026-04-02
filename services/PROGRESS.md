@@ -68,6 +68,7 @@ OpenAI model hooks exist for resume intake, screening, and audit. Real model-bac
 - [x] Qualification Screening Agent
 - [x] Audit Agent
 - [x] Ranking Agent
+- [x] Ranking agent now emits recommendation-oriented ranking factors and action suggestions
 
 ### Coordinator Workflow
 - [x] `resume-intake -> skill-assessment -> screening -> audit` orchestration

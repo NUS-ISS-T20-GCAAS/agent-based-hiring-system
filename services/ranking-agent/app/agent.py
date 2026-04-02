@@ -19,12 +19,13 @@ class RankingAgent(BaseAgent):
                 "top_candidate_id": ranking["top_candidate_id"],
                 "total_candidates": ranking["total_candidates"],
                 "avg_score": ranking["avg_score"],
+                "action_breakdown": ranking["action_breakdown"],
                 "details": {
                     "method": ranking["method"],
                     "top_k": top_k,
                 },
             },
-            "confidence": 0.6 if ranking["ranked_candidates"] else 0.4,
+            "confidence": self._confidence(ranking),
             "explanation": explanation,
         }
 
@@ -34,6 +35,17 @@ class RankingAgent(BaseAgent):
 
         leader = ranking["ranked_candidates"][0]
         return (
-            f"Ranked {ranking['total_candidates']} candidates using {ranking['method']}; "
-            f"top candidate={leader['name']} score={leader['score']:.1%}"
+            f"Ranked {ranking['total_candidates']} candidates using {ranking['method']}. "
+            f"Top candidate: {leader['name']} at {leader['score']:.1%} with action {leader['recommended_action']}. "
+            f"Action mix: invite={ranking['action_breakdown']['invite_to_interview']}, "
+            f"hold={ranking['action_breakdown']['hold_for_review']}, "
+            f"reject={ranking['action_breakdown']['reject']}."
         )
+
+    def _confidence(self, ranking: dict) -> float:
+        total = ranking["total_candidates"]
+        if total == 0:
+            return 0.4
+        if ranking["action_breakdown"]["hold_for_review"] > 0:
+            return 0.68
+        return 0.78

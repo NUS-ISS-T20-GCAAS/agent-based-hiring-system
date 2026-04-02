@@ -9,7 +9,7 @@ from app.shared_memory import SharedMemory
 
 app = FastAPI(
     title="Ranking Agent Service",
-    description="Standalone ranking agent scaffold for future recommendation logic",
+    description="Manual ranking and recommendation synthesis agent",
     version="0.1.0",
 )
 

@@ -58,7 +58,7 @@ export const formatDecisionType = (decisionType) => {
     skill_assessment_result: 'Skill Assessment',
     qualification_screening_result: 'Qualification Screening',
     audit_bias_check_result: 'Audit Review',
-    candidate_ranking_result: 'Manual Ranking',
+    candidate_ranking_result: 'Ranking Recommendation',
   };
 
   return labels[decisionType] || titleCase(decisionType);

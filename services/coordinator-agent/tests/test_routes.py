@@ -417,11 +417,22 @@ class RoutesReadApiTests(unittest.TestCase):
                             "candidate_id": "c-1",
                             "name": "Alice",
                             "recommendation": "SHORTLIST",
+                            "recommended_action": "HOLD_FOR_REVIEW",
+                            "decision_factors": [
+                                "strong qualification score",
+                                "partial skill alignment",
+                                "screening recommends shortlist",
+                            ],
+                            "ranking_summary": "Alice should be held for review with ranking score 77.0%.",
                             "score": 0.77,
                             "scores": {
                                 "qualification": 0.8,
                                 "skills": 0.7,
                                 "composite": 0.77,
+                            },
+                            "review_state": {
+                                "needs_human_review": True,
+                                "review_reasons": ["Screening: confidence 65% below floor 70%"],
                             },
                             "rank": 1,
                         }
@@ -429,7 +440,12 @@ class RoutesReadApiTests(unittest.TestCase):
                     "top_candidate_id": "c-1",
                     "total_candidates": 1,
                     "avg_score": 0.77,
-                    "details": {"method": "heuristic_composite_score", "top_k": None},
+                    "action_breakdown": {
+                        "invite_to_interview": 0,
+                        "hold_for_review": 1,
+                        "reject": 0,
+                    },
+                    "details": {"method": "heuristic_weighted_recommendation", "top_k": None},
                 },
                 "confidence": 0.6,
                 "explanation": "ranking ok",
@@ -483,12 +499,17 @@ class RoutesReadApiTests(unittest.TestCase):
         self.assertEqual(rank_result["ranked_candidates"], 1)
         self.assertEqual(repository.applied_ranking["job_id"], "job-1")
         self.assertEqual(repository.applied_ranking["ranked_candidates"][0]["candidate_id"], "c-1")
-        self.assertEqual(repository.applied_ranking["ranking_method"], "heuristic_composite_score")
+        self.assertEqual(repository.applied_ranking["ranking_method"], "heuristic_weighted_recommendation")
         self.assertEqual(repository.applied_ranking["ranked_at"], "2026-03-25T10:00:00+00:00")
         self.assertEqual(len(repository.saved_artifacts), 1)
         self.assertEqual(repository.saved_artifacts[0]["artifact_type"], "candidate_ranking_result")
         self.assertEqual(repository.saved_artifacts[0]["payload"]["rank"], 1)
-        self.assertEqual(repository.saved_artifacts[0]["payload"]["method"], "heuristic_composite_score")
+        self.assertEqual(repository.saved_artifacts[0]["payload"]["method"], "heuristic_weighted_recommendation")
+        self.assertEqual(repository.saved_artifacts[0]["payload"]["recommended_action"], "HOLD_FOR_REVIEW")
+        self.assertEqual(
+            repository.saved_artifacts[0]["payload"]["decision_factors"][0],
+            "strong qualification score",
+        )
         self.assertEqual(post_mock.call_count, 1)
 
         ranked_candidate = get_candidate("c-1")
@@ -497,7 +518,7 @@ class RoutesReadApiTests(unittest.TestCase):
         self.assertEqual(ranked_candidate["scores"]["composite"], 0.77)
         self.assertEqual(ranked_candidate["ranking"]["position"], 1)
         self.assertEqual(ranked_candidate["ranking"]["score"], 0.77)
-        self.assertEqual(ranked_candidate["ranking"]["method"], "heuristic_composite_score")
+        self.assertEqual(ranked_candidate["ranking"]["method"], "heuristic_weighted_recommendation")
         self.assertEqual(ranked_candidate["ranking"]["ranked_at"], "2026-03-25T10:00:00+00:00")
 
         decisions_after_rank = get_candidate_decisions("c-1")
@@ -554,13 +575,30 @@ class RoutesReadApiTests(unittest.TestCase):
                 "payload": {
                     "job_id": "job-1",
                     "ranked_candidates": [
-                        {"candidate_id": "c-1", "name": "Alice", "score": 0.77, "rank": 1},
-                        {"candidate_id": "c-2", "name": "Bob", "score": 0.74, "rank": 2},
+                        {
+                            "candidate_id": "c-1",
+                            "name": "Alice",
+                            "score": 0.77,
+                            "recommended_action": "HOLD_FOR_REVIEW",
+                            "rank": 1,
+                        },
+                        {
+                            "candidate_id": "c-2",
+                            "name": "Bob",
+                            "score": 0.74,
+                            "recommended_action": "HOLD_FOR_REVIEW",
+                            "rank": 2,
+                        },
                     ],
                     "top_candidate_id": "c-1",
                     "total_candidates": 2,
                     "avg_score": 0.755,
-                    "details": {"method": "heuristic_composite_score", "top_k": None},
+                    "action_breakdown": {
+                        "invite_to_interview": 0,
+                        "hold_for_review": 2,
+                        "reject": 0,
+                    },
+                    "details": {"method": "heuristic_weighted_recommendation", "top_k": None},
                 },
                 "confidence": 0.6,
                 "explanation": "ranking ok",

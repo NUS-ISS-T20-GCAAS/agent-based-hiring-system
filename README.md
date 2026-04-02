@@ -88,7 +88,7 @@ To minimize AWS costs when the environment is not in active use (saving ~$3.50/d
 - Agent-local shared memory is still present for service-level replay and diagnostics.
 - Resume intake, skill assessment, screening, and audit attempt OpenAI-backed execution when `OPENAI_API_KEY` is configured.
 - Skill assessment now produces a distinct competency and gap-analysis artifact before screening.
-- Ranking is currently heuristic only.
+- Ranking is currently heuristic, but now produces recommendation-rich ranking artifacts while remaining a manual step.
 - Screening and audit can jointly escalate candidates for human review.
 
 ## Implemented Coordinator APIs
