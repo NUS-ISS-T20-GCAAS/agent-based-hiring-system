@@ -129,6 +129,10 @@ jobs:
           sed -i "s/<ACCOUNT_ID>/$ACCOUNT_ID/g" ${{ env.TF_DIR }}/k8s/frontend-deployment.yaml
           sed -i "s/<REGION>/$REGION/g" ${{ env.TF_DIR }}/k8s/frontend-deployment.yaml
           sed -i "s/<IMAGE_TAG>/${IMAGE_TAG}/g" ${{ env.TF_DIR }}/k8s/frontend-deployment.yaml
+          ACM_ARN=$(terraform output -raw acm_certificate_arn 2>/dev/null || echo "")
+          SUBNET_IDS=$(terraform output -json public_subnet_ids | jq -r 'join(",")')
+          sed -i "s|<ACM_CERTIFICATE_ARN>|$ACM_ARN|g" ${{ env.TF_DIR }}/k8s/frontend-deployment.yaml
+          sed -i "s/<PUBLIC_SUBNET_IDS>/$SUBNET_IDS/g" ${{ env.TF_DIR }}/k8s/frontend-deployment.yaml
           
       - name: Apply Blueprint to Kubernetes
         run: |

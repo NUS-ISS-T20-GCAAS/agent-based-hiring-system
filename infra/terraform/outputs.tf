@@ -74,3 +74,30 @@ output "configure_kubectl" {
   description = "Command to update kubeconfig"
   value       = "aws eks update-kubeconfig --name ${aws_eks_cluster.main.name} --region ${var.aws_region}"
 }
+
+# -- Domain / HTTPS ----------------------------
+output "acm_certificate_arn" {
+  description = "ACM certificate ARN for HTTPS (used by K8s Ingress)"
+  value       = var.domain_name != "" ? aws_acm_certificate.frontend[0].arn : ""
+}
+
+output "acm_dns_validation_records" {
+  description = "CNAME records to add in Namecheap for ACM certificate validation"
+  value = var.domain_name != "" ? {
+    for dvo in aws_acm_certificate.frontend[0].domain_validation_options : dvo.domain_name => {
+      name  = dvo.resource_record_name
+      type  = dvo.resource_record_type
+      value = dvo.resource_record_value
+    }
+  } : {}
+}
+
+output "alb_controller_role_arn" {
+  description = "IAM role ARN for AWS Load Balancer Controller (used by Helm)"
+  value       = aws_iam_role.alb_controller.arn
+}
+
+output "domain_name" {
+  description = "Custom domain name"
+  value       = var.domain_name
+}

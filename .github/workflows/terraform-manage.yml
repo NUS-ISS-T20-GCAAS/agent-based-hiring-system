@@ -149,8 +149,9 @@ jobs:
             aws eks update-kubeconfig --name "$EKS_CLUSTER" --region ${{ env.AWS_REGION }} 2>/dev/null || true
 
             # Delete all LoadBalancer-type services to avoid orphaned LBs
-            echo "  Deleting frontend LoadBalancer service..."
+            echo "  Deleting frontend LoadBalancer service and Ingress..."
             kubectl delete svc --all -n frontend --ignore-not-found=true 2>/dev/null || true
+            kubectl delete ingress --all -n frontend --ignore-not-found=true 2>/dev/null || true
 
             # Wait for AWS to finish deprovisioning the Load Balancer
             echo "  Waiting 30s for AWS to deprovision Load Balancer..."
@@ -428,8 +429,17 @@ jobs:
         run: |
           EKS_CLUSTER=$(terraform output -raw eks_cluster_name)
           RDS_HOST=$(terraform output -raw rds_hostname)
+          VPC_ID=$(terraform output -raw vpc_id)
+          ACM_ARN=$(terraform output -raw acm_certificate_arn 2>/dev/null || echo "")
+          ALB_ROLE_ARN=$(terraform output -raw alb_controller_role_arn)
+          SUBNETS=$(terraform output -json public_subnet_ids | jq -r 'join(",")')
+
           echo "eks_cluster=$EKS_CLUSTER" >> "$GITHUB_OUTPUT"
           echo "rds_host=$RDS_HOST" >> "$GITHUB_OUTPUT"
+          echo "vpc_id=$VPC_ID" >> "$GITHUB_OUTPUT"
+          echo "acm_arn=$ACM_ARN" >> "$GITHUB_OUTPUT"
+          echo "alb_role_arn=$ALB_ROLE_ARN" >> "$GITHUB_OUTPUT"
+          echo "subnets=$SUBNETS" >> "$GITHUB_OUTPUT"
         working-directory: ${{ env.TF_DIR }}
 
       - name: Configure kubectl
@@ -437,6 +447,20 @@ jobs:
           aws eks update-kubeconfig \
             --name ${{ steps.tf-outputs.outputs.eks_cluster }} \
             --region ${{ env.AWS_REGION }}
+
+      - name: Install AWS Load Balancer Controller (Helm)
+        run: |
+          helm repo add eks https://aws.github.io/eks-charts
+          helm repo update
+
+          helm upgrade --install aws-load-balancer-controller eks/aws-load-balancer-controller \
+            -n kube-system \
+            --set clusterName=${{ steps.tf-outputs.outputs.eks_cluster }} \
+            --set serviceAccount.create=true \
+            --set serviceAccount.name=aws-load-balancer-controller \
+            --set serviceAccount.annotations."eks\.amazonaws\.com/role-arn"=${{ steps.tf-outputs.outputs.alb_role_arn }} \
+            --set region=${{ env.AWS_REGION }} \
+            --set vpcId=${{ steps.tf-outputs.outputs.vpc_id }}
 
       - name: Wait for Nodes to be Ready
         run: |
@@ -518,6 +542,11 @@ jobs:
 
           # Replace <IMAGE_TAG> with service-specific tags
           sed -i "s/<IMAGE_TAG>/${{ steps.image-tags.outputs.frontend_tag }}/g" ${{ env.TF_DIR }}/k8s/frontend-deployment.yaml
+
+          # Replace domain/HTTPS placeholders
+          sed -i "s|<ACM_CERTIFICATE_ARN>|${{ steps.tf-outputs.outputs.acm_arn }}|g" ${{ env.TF_DIR }}/k8s/frontend-deployment.yaml
+          sed -i "s/<PUBLIC_SUBNET_IDS>/${{ steps.tf-outputs.outputs.subnets }}/g" ${{ env.TF_DIR }}/k8s/frontend-deployment.yaml
+
           sed -i "s/<IMAGE_TAG>/${{ steps.image-tags.outputs.coordinator_tag }}/g" ${{ env.TF_DIR }}/k8s/coordinator-agent-deployment.yaml
           sed -i "s/<IMAGE_TAG>/${{ steps.image-tags.outputs.resume_tag }}/g" ${{ env.TF_DIR }}/k8s/resume-intake-agent-deployment.yaml
           sed -i "s/<IMAGE_TAG>/${{ steps.image-tags.outputs.screening_tag }}/g" ${{ env.TF_DIR }}/k8s/screening-agent-deployment.yaml
