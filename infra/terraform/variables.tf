@@ -112,6 +112,6 @@ variable "db_engine_version" {
 variable "domain_name" {
   description = "Custom domain name for HTTPS (e.g., sentinelrecruit.me). Leave empty to skip ACM/domain setup."
   type        = string
-  default     = ""
+  default     = "sentinelrecruit.me"
 }
 
