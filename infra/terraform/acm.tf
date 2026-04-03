@@ -1,4 +1,4 @@
-﻿# ──────────────────────────────────────────────
+# ──────────────────────────────────────────────
 # ACM Certificate for Custom Domain (HTTPS)
 # ──────────────────────────────────────────────
 # DNS validation: After `terraform apply`, add the
