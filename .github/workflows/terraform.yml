@@ -199,6 +199,10 @@ jobs:
             --set region=${{ env.AWS_REGION }} \
             --set vpcId=${{ steps.tf-outputs.outputs.vpc_id }}
 
+          # Wait for controller pods to be ready before applying Ingress
+          echo "Waiting for ALB controller pods to be ready..."
+          kubectl rollout status deployment/aws-load-balancer-controller -n kube-system --timeout=120s
+
       - name: Replace Placeholders in K8s Manifests
         run: |
           ACCOUNT_ID="${{ steps.aws-info.outputs.account_id }}"

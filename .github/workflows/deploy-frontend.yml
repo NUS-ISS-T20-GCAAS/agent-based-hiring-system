@@ -86,12 +86,16 @@ jobs:
           FRONTEND_ECR_URL=$(terraform output -json ecr_repository_urls | jq -r '.frontend')
           ACM_ARN=$(terraform output -raw acm_certificate_arn 2>/dev/null || echo "")
           SUBNET_IDS=$(terraform output -json public_subnet_ids | jq -r 'join(",")')
+          VPC_ID=$(terraform output -raw vpc_id)
+          ALB_ROLE_ARN=$(terraform output -raw alb_controller_role_arn)
           
           echo "account_id=$ACCOUNT_ID" >> "$GITHUB_OUTPUT"
           echo "eks_cluster=$EKS_CLUSTER" >> "$GITHUB_OUTPUT"
           echo "frontend_ecr_url=$FRONTEND_ECR_URL" >> "$GITHUB_OUTPUT"
           echo "acm_arn=$ACM_ARN" >> "$GITHUB_OUTPUT"
           echo "subnets=$SUBNET_IDS" >> "$GITHUB_OUTPUT"
+          echo "vpc_id=$VPC_ID" >> "$GITHUB_OUTPUT"
+          echo "alb_role_arn=$ALB_ROLE_ARN" >> "$GITHUB_OUTPUT"
         working-directory: ${{ env.TF_DIR }}
 
       - name: Login to Amazon ECR
@@ -124,6 +128,24 @@ jobs:
           aws eks update-kubeconfig \
             --name ${{ steps.tf-outputs.outputs.eks_cluster }} \
             --region ${{ env.AWS_REGION }}
+
+      - name: Ensure AWS Load Balancer Controller (Helm)
+        run: |
+          helm repo add eks https://aws.github.io/eks-charts
+          helm repo update
+
+          helm upgrade --install aws-load-balancer-controller eks/aws-load-balancer-controller \
+            -n kube-system \
+            --set clusterName=${{ steps.tf-outputs.outputs.eks_cluster }} \
+            --set serviceAccount.create=true \
+            --set serviceAccount.name=aws-load-balancer-controller \
+            --set serviceAccount.annotations."eks\.amazonaws\.com/role-arn"=${{ steps.tf-outputs.outputs.alb_role_arn }} \
+            --set region=${{ env.AWS_REGION }} \
+            --set vpcId=${{ steps.tf-outputs.outputs.vpc_id }}
+
+          # Wait for controller pods to be ready before applying Ingress
+          echo "Waiting for ALB controller pods to be ready..."
+          kubectl rollout status deployment/aws-load-balancer-controller -n kube-system --timeout=120s
 
       - name: Replace Placeholders in Manifest
         run: |
