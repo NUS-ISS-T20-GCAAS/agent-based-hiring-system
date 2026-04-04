@@ -67,6 +67,18 @@ def _normalize_reason(reason: object) -> str | None:
     return normalized or None
 
 
+def _namespace_reason(reason: object, prefix: str) -> str | None:
+    normalized = _normalize_reason(reason)
+    if not normalized:
+        return None
+
+    lowered = normalized.lower()
+    if lowered.startswith("screening:") or lowered.startswith("audit:"):
+        return normalized
+
+    return f"{prefix}: {normalized}"
+
+
 def _dedupe_reasons(reasons: list[str]) -> list[str]:
     seen: set[str] = set()
     deduped: list[str] = []
@@ -78,15 +90,9 @@ def _dedupe_reasons(reasons: list[str]) -> list[str]:
     return deduped
 
 
-def _build_review_state(
-    screening_payload: dict | None,
-    audit_payload: dict | None,
-) -> dict:
+def _build_review_state(screening_payload: dict | None) -> dict:
     screening_payload = screening_payload or {}
-    audit_payload = audit_payload or {}
-
     screening_required = bool(screening_payload.get("needs_human_review"))
-    audit_required = bool(audit_payload.get("review_required"))
 
     reasons: list[str] = []
 
@@ -94,36 +100,14 @@ def _build_review_state(
         screening_reasons = screening_payload.get("review_reasons")
         if isinstance(screening_reasons, list):
             for item in screening_reasons:
-                normalized = _normalize_reason(item)
+                normalized = _namespace_reason(item, "Screening")
                 if normalized:
-                    reasons.append(f"Screening: {normalized}")
-        if not reasons:
+                    reasons.append(normalized)
+        if not any(reason.startswith("Screening:") for reason in reasons):
             reasons.append("Screening: candidate requires manual review")
 
-    if audit_required:
-        audit_flags = audit_payload.get("bias_flags")
-        if isinstance(audit_flags, list):
-            for flag in audit_flags:
-                normalized = _normalize_reason(str(flag).replace("_", " "))
-                if normalized:
-                    reasons.append(f"Audit: {normalized}")
-
-        if not any(reason.startswith("Audit:") for reason in reasons):
-            risk_level = _normalize_reason(audit_payload.get("risk_level"))
-            if risk_level:
-                reasons.append(f"Audit: risk level {risk_level}")
-            else:
-                reasons.append("Audit: workflow requires compliance review")
-
-    needs_human_review = screening_required or audit_required
-    if screening_required and audit_required:
-        escalation_source = "screening_and_audit"
-    elif screening_required:
-        escalation_source = "screening"
-    elif audit_required:
-        escalation_source = "audit"
-    else:
-        escalation_source = "none"
+    needs_human_review = screening_required
+    escalation_source = "screening" if screening_required else "none"
 
     return {
         "needs_human_review": needs_human_review,
@@ -177,6 +161,22 @@ def _build_audit_input(
         "candidates": patched_candidates,
         "decisions": decisions,
     }
+
+
+def _build_skill_assessment_input(artifact: Artifact | None) -> dict:
+    if not artifact or not isinstance(artifact.payload, dict):
+        return {}
+
+    payload = dict(artifact.payload)
+    try:
+        confidence = float(payload.get("confidence"))
+    except (TypeError, ValueError):
+        confidence = None
+
+    if confidence is None and artifact.confidence is not None:
+        payload["confidence"] = float(artifact.confidence)
+
+    return payload
 
 
 def _post_with_retries(
@@ -444,7 +444,7 @@ def run_job(
                 "job_description": request.job_description,
                 "parsed_resume": intake_artifact.payload,
                 "job_requirements": job_requirements,
-                "skill_assessment": skill_assessment_artifact.payload,
+                "skill_assessment": _build_skill_assessment_input(skill_assessment_artifact),
             },
         )
 
@@ -557,7 +557,6 @@ def run_job(
         )
         review_state = _build_review_state(
             screening_artifact.payload if isinstance(screening_artifact.payload, dict) else None,
-            audit_artifact.payload if isinstance(audit_artifact.payload, dict) else None,
         )
         repository.complete_workflow(
             job_id=entity_id,

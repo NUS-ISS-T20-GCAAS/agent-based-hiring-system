@@ -49,6 +49,7 @@ class FakeRepository:
         self.saved_artifacts = []
         self.deleted_candidate_id = None
         self.enqueued_jobs = []
+        self.processing_marked = []
         self.candidates = {
             "c-1": {
                 "id": "c-1",
@@ -278,6 +279,10 @@ class FakeRepository:
             }
         )
         return queue_id
+
+    def mark_job_processing(self, *, job_id: str):
+        self.processing_marked.append(job_id)
+        return None
 
     def get_workflow_queue_counts(self):
         return {
@@ -729,6 +734,7 @@ class RoutesReadApiTests(unittest.TestCase):
         self.assertEqual(first_request.min_years_experience, 3)
         self.assertEqual(result["results"][0]["status"], "queued")
         self.assertEqual(result["results"][0]["queue_id"], "queue-1")
+        self.assertEqual(repository.processing_marked, ["job-1", "job-1"])
 
     @patch("app.routes.CoordinatorRepository")
     def test_batch_upload_route_extracts_txt_pdf_and_docx(self, repo_cls):

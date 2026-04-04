@@ -4,7 +4,7 @@ from unittest.mock import patch
 import requests
 from fastapi import HTTPException
 
-from app.coordinator import run_job
+from app.coordinator import _build_review_state, run_job
 from app.schemas import JobRequest
 
 
@@ -209,7 +209,10 @@ class CoordinatorRunJobTests(unittest.TestCase):
         self.assertEqual(second_payload["input_data"]["resume_text"], "Python developer with 5 years")
         self.assertEqual(
             third_payload["input_data"]["skill_assessment"],
-            skill_artifact["payload"],
+            {
+                **skill_artifact["payload"],
+                "confidence": skill_artifact["confidence"],
+            },
         )
         self.assertEqual(fourth_payload["input_data"]["job_id"], "job-123")
         self.assertEqual(fourth_payload["input_data"]["stats"]["shortlisted"], 1)
@@ -221,11 +224,8 @@ class CoordinatorRunJobTests(unittest.TestCase):
             {
                 "needs_human_review": True,
                 "review_status": "pending",
-                "review_reasons": [
-                    "Screening: confidence 65% below floor 70%",
-                    "Audit: low selection rate",
-                ],
-                "escalation_source": "screening_and_audit",
+                "review_reasons": ["Screening: confidence 65% below floor 70%"],
+                "escalation_source": "screening",
             },
         )
         self.assertGreaterEqual(agent_activity_mock.call_count, 6)
@@ -310,7 +310,7 @@ class CoordinatorRunJobTests(unittest.TestCase):
 
     @patch("app.coordinator.time.sleep", return_value=None)
     @patch("app.coordinator.requests.post")
-    def test_run_job_sets_audit_only_review_state(self, post_mock, _sleep_mock):
+    def test_run_job_keeps_candidate_review_clear_when_only_audit_requires_attention(self, post_mock, _sleep_mock):
         post_mock.side_effect = [
             FakeResponse(
                 {
@@ -406,10 +406,31 @@ class CoordinatorRunJobTests(unittest.TestCase):
         self.assertEqual(
             repository.completed_workflow_kwargs["review_state"],
             {
+                "needs_human_review": False,
+                "review_status": "not_required",
+                "review_reasons": [],
+                "escalation_source": "none",
+            },
+        )
+
+    def test_build_review_state_dedupes_screening_reasons(self):
+        review_state = _build_review_state(
+            screening_payload={
+                "needs_human_review": True,
+                "review_reasons": [
+                    "confidence 65% below floor 70%",
+                    "Screening: confidence 65% below floor 70%",
+                ],
+            },
+        )
+
+        self.assertEqual(
+            review_state,
+            {
                 "needs_human_review": True,
                 "review_status": "pending",
-                "review_reasons": ["Audit: small sample size"],
-                "escalation_source": "audit",
+                "review_reasons": ["Screening: confidence 65% below floor 70%"],
+                "escalation_source": "screening",
             },
         )
 

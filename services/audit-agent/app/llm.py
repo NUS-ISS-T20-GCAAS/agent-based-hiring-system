@@ -40,7 +40,11 @@ class AuditLLM:
                 "risk_level, review_required, recommendations, data_completeness, confidence. "
                 "bias_flags and recommendations must be arrays of strings. "
                 "risk_level must be one of low, medium, high. "
-                "selection_rate and confidence must be numbers from 0 to 1."
+                "selection_rate and confidence must be numbers from 0 to 1. "
+                "Use the provided stats, candidates, and decisions as the source of truth for counts and rates. "
+                "If bias_flags is empty, review_required must be false and risk_level must be low. "
+                "If low_selection_rate is present in bias_flags, risk_level must be high. "
+                "If bias_flags is non-empty and does not include low_selection_rate, risk_level must be medium or high."
             ),
             input=json.dumps(
                 {

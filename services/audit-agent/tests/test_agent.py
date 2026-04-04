@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 from app.agent import AuditAgent
 from app.shared_memory import SharedMemory
-from app.worker import heuristic_audit_check, coerce_audit_result
+from app.worker import coerce_audit_result, heuristic_audit_check, normalize_audit_result
 
 
 class AuditAgentTests(unittest.TestCase):
@@ -32,8 +32,9 @@ class AuditAgentTests(unittest.TestCase):
         )
 
         llm.audit.assert_called_once()
-        self.assertEqual(result["payload"]["risk_level"], "medium")
-        self.assertTrue(result["payload"]["review_required"])
+        self.assertEqual(result["payload"]["risk_level"], "low")
+        self.assertFalse(result["payload"]["review_required"])
+        self.assertEqual(result["payload"]["bias_flags"], [])
         self.assertEqual(result["confidence"], 0.88)
 
     @patch("app.agent.AuditLLM")
@@ -52,7 +53,7 @@ class AuditAgentTests(unittest.TestCase):
         details = result["payload"].get("details", {})
         self.assertEqual(details.get("method"), "heuristic")
         self.assertTrue(result["payload"]["review_required"])
-        self.assertIn("Human review is required.", result["explanation"])
+        self.assertIn("Manual audit review is required.", result["explanation"])
 
 
 class AuditWorkerTests(unittest.TestCase):
@@ -95,6 +96,71 @@ class AuditWorkerTests(unittest.TestCase):
         self.assertEqual(output["risk_level"], "medium")
         self.assertTrue(output["review_required"])
         self.assertEqual(output["shortlisted"], 2)
+
+    def test_normalize_audit_result_enforces_no_flag_invariants(self):
+        output = normalize_audit_result(
+            result={
+                "job_id": "job-4",
+                "selection_rate": 0.2,
+                "total_candidates": 8,
+                "shortlisted": 2,
+                "bias_flags": [],
+                "risk_level": "high",
+                "review_required": True,
+                "recommendations": ["Investigate"],
+                "data_completeness": 0.0,
+                "confidence": 0.83,
+            },
+            job_id="job-4",
+            stats={"total_candidates": 8, "shortlisted": 8},
+            candidates=[{"status": "shortlisted"} for _ in range(8)],
+            decisions=[{"decision_type": "resume_intake_result"} for _ in range(8)],
+        )
+
+        self.assertEqual(output["selection_rate"], 1.0)
+        self.assertEqual(output["risk_level"], "low")
+        self.assertFalse(output["review_required"])
+        self.assertEqual(output["bias_flags"], [])
+        self.assertEqual(output["data_completeness"], 1.0)
+        self.assertEqual(
+            output["recommendations"],
+            ["No immediate audit action required; continue monitoring outcomes."],
+        )
+
+    def test_normalize_audit_result_uses_observed_flags_over_llm_flags(self):
+        output = normalize_audit_result(
+            result={
+                "job_id": "job-5",
+                "selection_rate": 0.9,
+                "total_candidates": 10,
+                "shortlisted": 9,
+                "bias_flags": ["small sample size"],
+                "risk_level": "low",
+                "review_required": False,
+                "recommendations": [],
+                "data_completeness": 0.4,
+                "confidence": 0.71,
+            },
+            job_id="job-5",
+            stats={"total_candidates": 10, "shortlisted": 1},
+            candidates=[{"status": "rejected"} for _ in range(9)] + [{"status": "shortlisted"}],
+            decisions=[{"decision_type": "resume_intake_result"} for _ in range(10)],
+        )
+
+        self.assertEqual(output["bias_flags"], ["low_selection_rate"])
+        self.assertEqual(output["risk_level"], "high")
+        self.assertTrue(output["review_required"])
+
+    def test_heuristic_uses_artifact_type_when_present(self):
+        result = heuristic_audit_check(
+            job_id="job-6",
+            stats={"total_candidates": 5, "shortlisted": 5},
+            candidates=[{"status": "shortlisted"} for _ in range(5)],
+            decisions=[{"artifact_type": "resume_intake_result"} for _ in range(5)],
+        )
+
+        self.assertEqual(result["bias_flags"], [])
+        self.assertFalse(result["review_required"])
 
 
 if __name__ == "__main__":

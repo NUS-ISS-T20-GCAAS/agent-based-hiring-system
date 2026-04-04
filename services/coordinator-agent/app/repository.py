@@ -190,6 +190,18 @@ class CoordinatorRepository:
                 queue_id = cur.fetchone()[0]
                 return str(queue_id)
 
+    def mark_job_processing(self, *, job_id: str) -> None:
+        with transaction() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE jobs
+                    SET status = 'PROCESSING', updated_at = NOW()
+                    WHERE job_id = %s
+                    """,
+                    (job_id,),
+                )
+
     def claim_next_workflow_job(self) -> dict[str, Any] | None:
         with transaction() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:

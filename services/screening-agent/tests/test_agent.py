@@ -155,6 +155,8 @@ class ScreeningAgentTests(unittest.TestCase):
         self.assertEqual(result["payload"]["matched_skills"], ["python"])
         self.assertIn("fastapi", result["payload"]["missing_skills"])
         self.assertTrue(result["payload"]["meets_threshold"])
+        self.assertEqual(result["confidence"], 0.82)
+        self.assertFalse(result["payload"]["needs_human_review"])
 
 
 class HeuristicTests(unittest.TestCase):
