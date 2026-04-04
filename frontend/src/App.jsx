@@ -19,7 +19,6 @@ function App() {
   const [processing, setProcessing] = useState(false);
   const [agentActivity, setAgentActivity] = useState([]);
   const [handoffTrace, setHandoffTrace] = useState([]);
-  const [handoffsLoading, setHandoffsLoading] = useState(false);
   const [selectedCandidate, setSelectedCandidate] = useState(null);
   const [stats, setStats] = useState({
     total_candidates: 0,
@@ -53,7 +52,7 @@ function App() {
     if (selectedJob) {
       fetchCandidates();
       fetchStats();
-      fetchJobHandoffs(selectedJob);
+      setHandoffTrace([]);
     } else {
       setHandoffTrace([]);
     }
@@ -241,30 +240,6 @@ function App() {
     }
   };
 
-  const fetchJobHandoffs = async (jobId = selectedJob) => {
-    if (!jobId) {
-      setHandoffTrace([]);
-      return;
-    }
-
-    try {
-      setHandoffsLoading(true);
-      const data = await api.getJobHandoffs(jobId);
-      if (jobId === selectedJobRef.current) {
-        setHandoffTrace(Array.isArray(data) ? data : []);
-      }
-    } catch (error) {
-      console.error('Error fetching handoff trace:', error);
-      if (jobId === selectedJobRef.current) {
-        setHandoffTrace([]);
-      }
-    } finally {
-      if (jobId === selectedJobRef.current) {
-        setHandoffsLoading(false);
-      }
-    }
-  };
-
   // Event handlers
   const handleCreateJob = async (jobData) => {
     try {
@@ -286,6 +261,7 @@ function App() {
     setProcessing(true);
     
     try {
+      setHandoffTrace([]);
       const filesArray = Array.from(files);
       const result = await api.uploadResumes(filesArray, selectedJob);
       setJobRunState((prev) => ({
@@ -482,7 +458,8 @@ function App() {
           <AgentActivity
             activity={agentActivity}
             handoffs={handoffTrace}
-            loading={handoffsLoading}
+            isVisible={activeTab === 'agents'}
+            isRunning={selectedJobIsRunning}
             selectedJob={selectedJob}
             onClear={handleClearActivity}
           />

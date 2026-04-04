@@ -66,6 +66,7 @@ services:
     ports:
       - "8000:8000"
     environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
       - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o-mini}
       - RANKING_AGENT_URL=http://ranking-agent:8000
       - AUDIT_AGENT_URL=http://audit-agent:8000

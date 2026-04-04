@@ -88,6 +88,7 @@ Relevant local environment variables:
 
 Behavior notes:
 
+- Coordinator can generate a persisted `workflow_orchestration_plan` artifact and pass that plan into downstream stages when `OPENAI_API_KEY` is configured.
 - Resume intake, skill assessment, screening, and audit use OpenAI when configured and fall back when unavailable.
 - Skill assessment focuses on competency/gap analysis rather than pass/fail decisions.
 - Ranking is heuristic only in the current codebase.

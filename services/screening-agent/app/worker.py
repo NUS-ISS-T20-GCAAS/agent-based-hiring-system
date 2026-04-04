@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 Worker utility functions for screening
 Provides heuristic fallback and result normalization
@@ -27,6 +29,17 @@ KNOWN_SKILL_KEYWORDS = (
     "git",
 )
 
+JUNIOR_ROLE_KEYWORDS = (
+    "junior",
+    "entry level",
+    "entry-level",
+    "graduate",
+    "intern",
+    "internship",
+    "associate",
+    "apprentice",
+)
+
 
 def _normalize_skill_list(skills: list | None) -> list[str]:
     if not isinstance(skills, list):
@@ -48,6 +61,55 @@ def _normalize_skill_list(skills: list | None) -> list[str]:
 def _extract_skill_keywords(text: str) -> list[str]:
     lower_text = (text or "").lower()
     return [skill for skill in KNOWN_SKILL_KEYWORDS if skill in lower_text]
+
+
+def evaluate_experience_alignment(
+    *,
+    years_experience: object,
+    job_description: str,
+    job_requirements: dict | None = None,
+) -> dict:
+    job_requirements = job_requirements or {}
+    lower_job_description = (job_description or "").lower()
+    min_years = job_requirements.get("min_years_experience")
+
+    try:
+        years = float(years_experience or 0.0)
+    except (TypeError, ValueError):
+        years = 0.0
+
+    junior_role = any(keyword in lower_job_description for keyword in JUNIOR_ROLE_KEYWORDS)
+    if not junior_role and isinstance(min_years, (int, float)):
+        junior_role = float(min_years) <= 2
+
+    severe_overqualification = False
+    review_reason = None
+    max_allowed_score = None
+
+    if junior_role:
+        if isinstance(min_years, (int, float)):
+            severe_overqualification = years >= float(min_years) + 4
+        else:
+            severe_overqualification = years >= 7
+
+        if severe_overqualification:
+            max_allowed_score = QUALIFICATION_THRESHOLD - 0.02
+            if isinstance(min_years, (int, float)):
+                review_reason = (
+                    f"candidate has {years:.0f} years of experience for a junior role targeting "
+                    f"{float(min_years):.0f}+ years and may be overqualified"
+                )
+            else:
+                review_reason = (
+                    f"candidate has {years:.0f} years of experience for a junior role and may be overqualified"
+                )
+
+    return {
+        "junior_role": junior_role,
+        "severe_overqualification": severe_overqualification,
+        "review_reason": review_reason,
+        "max_allowed_score": max_allowed_score,
+    }
 
 
 def heuristic_screen_candidate(

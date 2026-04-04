@@ -17,6 +17,7 @@ class AuditAgent(BaseAgent):
         candidates = input_data.get("candidates") or []
         decisions = input_data.get("decisions") or []
         job_id = input_data.get("job_id")
+        orchestration_plan = input_data.get("orchestration_plan") or {}
 
         try:
             raw_result = self.llm.audit(
@@ -24,6 +25,7 @@ class AuditAgent(BaseAgent):
                 stats=stats,
                 candidates=candidates,
                 decisions=decisions,
+                orchestration_plan=orchestration_plan,
             )
         except Exception as exc:
             method_used = "heuristic"

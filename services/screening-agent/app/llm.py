@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 LLM client for AI-powered candidate screening
 Uses OpenAI API with structured output
@@ -7,7 +9,10 @@ import json
 import re
 from typing import Any
 
-from openai import OpenAI
+try:
+    from openai import OpenAI
+except ImportError:  # pragma: no cover - depends on runtime environment
+    OpenAI = None
 
 from app.config import OPENAI_API_KEY, OPENAI_MODEL, OPENAI_TIMEOUT_SEC, QUALIFICATION_THRESHOLD
 
@@ -42,7 +47,7 @@ class ScreeningLLM:
     """
     
     def __init__(self) -> None:
-        self.enabled = bool(OPENAI_API_KEY)
+        self.enabled = bool(OPENAI_API_KEY and OpenAI is not None)
         self._client = (
             OpenAI(api_key=OPENAI_API_KEY, timeout=OPENAI_TIMEOUT_SEC) 
             if self.enabled 
@@ -54,7 +59,8 @@ class ScreeningLLM:
         *, 
         parsed_resume: dict[str, Any], 
         job_description: str,
-        job_requirements: dict[str, Any] = None
+        job_requirements: dict[str, Any] = None,
+        orchestration_plan: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """
         Score candidate using LLM
@@ -77,10 +83,10 @@ class ScreeningLLM:
             }
         """
         if not self._client:
-            raise RuntimeError("OPENAI_API_KEY is not configured - LLM screening disabled")
+            raise RuntimeError("OPENAI_API_KEY or OpenAI SDK is not configured - LLM screening disabled")
 
         # Build comprehensive prompt
-        prompt = self._build_prompt(parsed_resume, job_description, job_requirements)
+        prompt = self._build_prompt(parsed_resume, job_description, job_requirements, orchestration_plan)
         
         try:
             # Call OpenAI API
@@ -158,7 +164,8 @@ class ScreeningLLM:
         self, 
         parsed_resume: dict, 
         job_description: str,
-        job_requirements: dict = None
+        job_requirements: dict = None,
+        orchestration_plan: dict | None = None,
     ) -> str:
         """Build the user prompt with all relevant data"""
         parts = []
@@ -181,6 +188,11 @@ class ScreeningLLM:
             if "min_years_experience" in job_requirements:
                 parts.append(f"Minimum Experience: {job_requirements['min_years_experience']} years")
             
+            parts.append("")
+
+        if orchestration_plan:
+            parts.append("=== COORDINATOR ORCHESTRATION PLAN ===")
+            parts.append(json.dumps(orchestration_plan, indent=2))
             parts.append("")
         
         # Candidate resume

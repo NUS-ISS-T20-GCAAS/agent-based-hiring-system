@@ -65,7 +65,7 @@ class ApiService {
   }
 
   /**
-   * Get agent handoff trace for a job
+   * Get coordinator orchestration trace for a job
    */
   async getJobHandoffs(jobId) {
     return this.request(`/api/jobs/${jobId}/handoffs`);

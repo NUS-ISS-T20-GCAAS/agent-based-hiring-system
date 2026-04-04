@@ -24,6 +24,7 @@ class FakeResponse:
 class FakeRepository:
     def __init__(self):
         self.completed_workflow_kwargs = None
+        self.saved_artifacts = []
 
     def upsert_job(self, **_kwargs):
         return None
@@ -37,7 +38,8 @@ class FakeRepository:
     def update_workflow_step(self, **_kwargs):
         return None
 
-    def save_artifact(self, **_kwargs):
+    def save_artifact(self, **kwargs):
+        self.saved_artifacts.append(kwargs)
         return None
 
     def list_candidates(self, **_kwargs):
@@ -75,13 +77,24 @@ class CoordinatorRunJobTests(unittest.TestCase):
     @patch("app.coordinator.emit_agent_activity")
     @patch("app.coordinator.time.sleep", return_value=None)
     @patch("app.coordinator.requests.post")
+    @patch("app.coordinator.coordinator_llm")
     def test_run_job_calls_intake_then_skill_assessment_then_screening_then_audit(
         self,
+        coordinator_llm_mock,
         post_mock,
         _sleep_mock,
         agent_activity_mock,
         candidate_update_mock,
     ):
+        coordinator_llm_mock.enabled = True
+        coordinator_llm_mock.plan_workflow.return_value = {
+            "priority_skills": ["python", "fastapi"],
+            "screening_focus": ["backend api depth"],
+            "audit_focus": ["borderline shortlist consistency"],
+            "risk_flags": ["missing fastapi evidence"],
+            "orchestration_notes": ["verify recent backend delivery"],
+            "confidence": 0.83,
+        }
         intake_artifact = {
             "artifact_id": "a-intake",
             "entity_id": "job-123",
@@ -182,6 +195,11 @@ class CoordinatorRunJobTests(unittest.TestCase):
         self.assertEqual(result.status, "completed")
         self.assertEqual(result.artifact_id, "a-audit")
         self.assertEqual(post_mock.call_count, 4)
+        self.assertEqual(len(repository.saved_artifacts), 5)
+        self.assertEqual(
+            repository.saved_artifacts[0]["artifact"].artifact_type,
+            "workflow_orchestration_plan",
+        )
 
         first_payload = post_mock.call_args_list[0].kwargs["json"]
         second_payload = post_mock.call_args_list[1].kwargs["json"]
@@ -208,16 +226,28 @@ class CoordinatorRunJobTests(unittest.TestCase):
         )
         self.assertEqual(second_payload["input_data"]["resume_text"], "Python developer with 5 years")
         self.assertEqual(
+            second_payload["input_data"]["orchestration_plan"]["priority_skills"],
+            ["python", "fastapi"],
+        )
+        self.assertEqual(
             third_payload["input_data"]["skill_assessment"],
             {
                 **skill_artifact["payload"],
                 "confidence": skill_artifact["confidence"],
             },
         )
+        self.assertEqual(
+            third_payload["input_data"]["orchestration_plan"]["risk_flags"],
+            ["missing fastapi evidence"],
+        )
         self.assertEqual(fourth_payload["input_data"]["job_id"], "job-123")
         self.assertEqual(fourth_payload["input_data"]["stats"]["shortlisted"], 1)
         self.assertEqual(fourth_payload["input_data"]["candidates"][0]["status"], "shortlisted")
         self.assertEqual(fourth_payload["input_data"]["candidates"][0]["scores"]["skills"], 0.8)
+        self.assertEqual(
+            fourth_payload["input_data"]["orchestration_plan"]["audit_focus"],
+            ["borderline shortlist consistency"],
+        )
         self.assertEqual(repository.completed_workflow_kwargs["skill_payload"], skill_artifact["payload"])
         self.assertEqual(
             repository.completed_workflow_kwargs["review_state"],
@@ -307,6 +337,104 @@ class CoordinatorRunJobTests(unittest.TestCase):
         self.assertEqual(ctx.exception.status_code, 503)
         self.assertEqual(ctx.exception.detail, "audit unavailable")
         self.assertEqual(post_mock.call_count, 6)
+
+    @patch("app.coordinator.time.sleep", return_value=None)
+    @patch("app.coordinator.requests.post")
+    @patch("app.coordinator.coordinator_llm")
+    def test_run_job_falls_back_when_coordinator_plan_generation_fails(self, coordinator_llm_mock, post_mock, _sleep_mock):
+        coordinator_llm_mock.enabled = True
+        coordinator_llm_mock.plan_workflow.side_effect = RuntimeError("planner unavailable")
+        post_mock.side_effect = [
+            FakeResponse(
+                {
+                    "artifact_id": "a-intake",
+                    "entity_id": "job-llm-fallback",
+                    "correlation_id": "cid-llm",
+                    "agent_id": "agent-intake",
+                    "agent_type": "resume_intake",
+                    "artifact_type": "resume_intake_result",
+                    "payload": {"skills": ["python"], "years_experience": 4},
+                    "confidence": 0.8,
+                    "explanation": "intake ok",
+                    "created_at": "2026-02-24T12:00:00+00:00",
+                    "version": 1,
+                }
+            ),
+            FakeResponse(
+                {
+                    "artifact_id": "a-skill",
+                    "entity_id": "job-llm-fallback",
+                    "correlation_id": "cid-llm",
+                    "agent_id": "agent-skill",
+                    "agent_type": "skill_assessment",
+                    "artifact_type": "skill_assessment_result",
+                    "payload": {"skills_score": 0.7},
+                    "confidence": 0.82,
+                    "explanation": "skill ok",
+                    "created_at": "2026-02-24T12:00:01+00:00",
+                    "version": 1,
+                }
+            ),
+            FakeResponse(
+                {
+                    "artifact_id": "a-screen",
+                    "entity_id": "job-llm-fallback",
+                    "correlation_id": "cid-llm",
+                    "agent_id": "agent-screen",
+                    "agent_type": "screening",
+                    "artifact_type": "qualification_screening_result",
+                    "payload": {"qualification_score": 0.9, "meets_threshold": True},
+                    "confidence": 0.92,
+                    "explanation": "screen ok",
+                    "created_at": "2026-02-24T12:00:02+00:00",
+                    "version": 1,
+                }
+            ),
+            FakeResponse(
+                {
+                    "artifact_id": "a-audit",
+                    "entity_id": "job-llm-fallback",
+                    "correlation_id": "cid-llm",
+                    "agent_id": "agent-audit",
+                    "agent_type": "audit",
+                    "artifact_type": "audit_bias_check_result",
+                    "payload": {
+                        "job_id": "job-llm-fallback",
+                        "selection_rate": 1.0,
+                        "total_candidates": 1,
+                        "shortlisted": 1,
+                        "bias_flags": [],
+                        "risk_level": "low",
+                        "review_required": False,
+                        "recommendations": [],
+                    },
+                    "confidence": 0.88,
+                    "explanation": "audit ok",
+                    "created_at": "2026-02-24T12:00:03+00:00",
+                    "version": 1,
+                }
+            ),
+        ]
+
+        repository = FakeRepository()
+        result = run_job(
+            JobRequest(
+                job_id="job-llm-fallback",
+                resume_url="https://example.com/resume.pdf",
+                resume_text="Python developer with 4 years",
+                job_description="Need python",
+            ),
+            repository=repository,
+        )
+
+        self.assertEqual(result.status, "completed")
+        self.assertEqual(post_mock.call_count, 4)
+        self.assertFalse(
+            any(
+                saved["artifact"].artifact_type == "workflow_orchestration_plan"
+                for saved in repository.saved_artifacts
+            )
+        )
 
     @patch("app.coordinator.time.sleep", return_value=None)
     @patch("app.coordinator.requests.post")

@@ -172,6 +172,25 @@ class FakeRepository:
     def list_artifacts(self, *, job_id=None):
         artifacts = [
             {
+                "artifact_id": "a-plan",
+                "entity_id": job_id or "job-1",
+                "candidate_id": "c-1",
+                "correlation_id": "cid-1",
+                "agent_id": "coordinator-agent",
+                "agent_type": "coordinator",
+                "artifact_type": "workflow_orchestration_plan",
+                "payload": {
+                    "priority_skills": ["python", "fastapi"],
+                    "screening_focus": ["backend delivery evidence"],
+                    "audit_focus": ["borderline shortlist consistency"],
+                    "risk_flags": ["missing sql signal"],
+                },
+                "confidence": 0.83,
+                "explanation": "Coordinator generated an orchestration plan for downstream stages.",
+                "created_at": "2026-02-24T12:00:01+00:00",
+                "version": 1,
+            },
+            {
                 "artifact_id": "a-intake",
                 "entity_id": job_id or "job-1",
                 "candidate_id": "c-1",
@@ -491,19 +510,23 @@ class RoutesReadApiTests(unittest.TestCase):
         self.assertEqual(decisions[1]["decision_type"], "qualification_screening_result")
 
         artifacts = get_job_artifacts("job-1")
-        self.assertEqual(len(artifacts), 3)
-        self.assertEqual(artifacts[1]["artifact_type"], "skill_assessment_result")
-        self.assertEqual(artifacts[2]["artifact_type"], "audit_bias_check_result")
+        self.assertEqual(len(artifacts), 4)
+        self.assertEqual(artifacts[0]["artifact_type"], "workflow_orchestration_plan")
+        self.assertEqual(artifacts[2]["artifact_type"], "skill_assessment_result")
+        self.assertEqual(artifacts[3]["artifact_type"], "audit_bias_check_result")
 
         handoffs = get_job_handoffs("job-1")
-        self.assertEqual(len(handoffs), 6)
+        self.assertEqual(len(handoffs), 8)
         self.assertEqual(handoffs[0]["event_kind"], "handoff")
         self.assertEqual(handoffs[0]["direction"], "request")
         self.assertEqual(handoffs[0]["from_agent"], "coordinator")
-        self.assertEqual(handoffs[0]["to_agent"], "resume-intake")
+        self.assertEqual(handoffs[0]["to_agent"], "coordinator")
         self.assertEqual(handoffs[1]["direction"], "response")
-        self.assertEqual(handoffs[1]["from_agent"], "resume-intake")
-        self.assertEqual(handoffs[1]["artifact_type"], "resume_intake_result")
+        self.assertEqual(handoffs[1]["from_agent"], "coordinator")
+        self.assertEqual(handoffs[1]["artifact_type"], "workflow_orchestration_plan")
+        self.assertEqual(handoffs[2]["to_agent"], "resume-intake")
+        self.assertEqual(handoffs[3]["from_agent"], "resume-intake")
+        self.assertEqual(handoffs[3]["artifact_type"], "resume_intake_result")
 
         stats = get_stats(job_id="job-1")
         self.assertEqual(stats["total_candidates"], 10)
