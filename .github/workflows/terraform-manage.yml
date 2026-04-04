@@ -94,7 +94,7 @@ jobs:
 
           if [ -z "$EKS_CLUSTER" ]; then
             echo "⚠️ No EKS cluster found in state. Using 'latest' as fallback."
-            echo '{"frontend":"latest","coordinator-agent":"latest","resume-intake-agent":"latest","screening-agent":"latest","audit-agent":"latest","ranking-agent":"latest"}' > image-tags.json
+            echo '{"frontend":"latest","coordinator-agent":"latest","resume-intake-agent":"latest","screening-agent":"latest","audit-agent":"latest","ranking-agent":"latest","skill-assessment-agent":"latest"}' > image-tags.json
           else
             aws eks update-kubeconfig --name "$EKS_CLUSTER" --region ${{ env.AWS_REGION }}
 
@@ -105,6 +105,7 @@ jobs:
             SCREEN_TAG=$(kubectl get deployment screening-agent -n services -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null | awk -F: '{print $NF}' || echo "latest")
             AUDIT_TAG=$(kubectl get deployment audit-agent -n services -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null | awk -F: '{print $NF}' || echo "latest")
             RANKING_TAG=$(kubectl get deployment ranking-agent -n services -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null | awk -F: '{print $NF}' || echo "latest")
+            SKILL_TAG=$(kubectl get deployment skill-assessment-agent -n services -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null | awk -F: '{print $NF}' || echo "latest")
 
             # Default empty values to 'latest'
             FE_TAG=${FE_TAG:-latest}
@@ -113,6 +114,7 @@ jobs:
             SCREEN_TAG=${SCREEN_TAG:-latest}
             AUDIT_TAG=${AUDIT_TAG:-latest}
             RANKING_TAG=${RANKING_TAG:-latest}
+            SKILL_TAG=${SKILL_TAG:-latest}
 
             echo "  frontend:            $FE_TAG"
             echo "  coordinator-agent:   $COORD_TAG"
@@ -120,9 +122,10 @@ jobs:
             echo "  screening-agent:     $SCREEN_TAG"
             echo "  audit-agent:         $AUDIT_TAG"
             echo "  ranking-agent:       $RANKING_TAG"
+            echo "  skill-assessment-agent: $SKILL_TAG"
 
             cat > image-tags.json <<EOF
-          {"frontend":"$FE_TAG","coordinator-agent":"$COORD_TAG","resume-intake-agent":"$RESUME_TAG","screening-agent":"$SCREEN_TAG","audit-agent":"$AUDIT_TAG","ranking-agent":"$RANKING_TAG"}
+          {"frontend":"$FE_TAG","coordinator-agent":"$COORD_TAG","resume-intake-agent":"$RESUME_TAG","screening-agent":"$SCREEN_TAG","audit-agent":"$AUDIT_TAG","ranking-agent":"$RANKING_TAG","skill-assessment-agent":"$SKILL_TAG"}
           EOF
           fi
 
@@ -508,6 +511,7 @@ jobs:
             SCREEN_TAG=$(cat ${{ env.TF_DIR }}/image-tags.json | python3 -c "import sys,json; print(json.load(sys.stdin)['screening-agent'])")
             AUDIT_TAG=$(cat ${{ env.TF_DIR }}/image-tags.json | python3 -c "import sys,json; print(json.load(sys.stdin).get('audit-agent', 'latest'))")
             RANKING_TAG=$(cat ${{ env.TF_DIR }}/image-tags.json | python3 -c "import sys,json; print(json.load(sys.stdin).get('ranking-agent', 'latest'))")
+            SKILL_TAG=$(cat ${{ env.TF_DIR }}/image-tags.json | python3 -c "import sys,json; print(json.load(sys.stdin).get('skill-assessment-agent', 'latest'))")
           else
             echo "⚠️ No saved image tags found. Using 'latest' as fallback."
             FE_TAG="latest"
@@ -516,6 +520,7 @@ jobs:
             SCREEN_TAG="latest"
             AUDIT_TAG="latest"
             RANKING_TAG="latest"
+            SKILL_TAG="latest"
           fi
           echo "frontend_tag=$FE_TAG" >> "$GITHUB_OUTPUT"
           echo "coordinator_tag=$COORD_TAG" >> "$GITHUB_OUTPUT"
@@ -523,6 +528,7 @@ jobs:
           echo "screening_tag=$SCREEN_TAG" >> "$GITHUB_OUTPUT"
           echo "audit_tag=$AUDIT_TAG" >> "$GITHUB_OUTPUT"
           echo "ranking_tag=$RANKING_TAG" >> "$GITHUB_OUTPUT"
+          echo "skill_tag=$SKILL_TAG" >> "$GITHUB_OUTPUT"
           echo ""
           echo "Image tags to deploy:"
           echo "  frontend:            $FE_TAG"
@@ -531,6 +537,7 @@ jobs:
           echo "  screening-agent:     $SCREEN_TAG"
           echo "  audit-agent:         $AUDIT_TAG"
           echo "  ranking-agent:       $RANKING_TAG"
+          echo "  skill-assessment-agent: $SKILL_TAG"
 
       - name: Replace Placeholders in K8s Manifests
         run: |
@@ -556,6 +563,7 @@ jobs:
           sed -i "s/<IMAGE_TAG>/${{ steps.image-tags.outputs.screening_tag }}/g" ${{ env.TF_DIR }}/k8s/screening-agent-deployment.yaml
           sed -i "s/<IMAGE_TAG>/${{ steps.image-tags.outputs.audit_tag }}/g" ${{ env.TF_DIR }}/k8s/audit-agent-deployment.yaml 2>/dev/null || true
           sed -i "s/<IMAGE_TAG>/${{ steps.image-tags.outputs.ranking_tag }}/g" ${{ env.TF_DIR }}/k8s/ranking-agent-deployment.yaml 2>/dev/null || true
+          sed -i "s/<IMAGE_TAG>/${{ steps.image-tags.outputs.skill_tag }}/g" ${{ env.TF_DIR }}/k8s/skill-assessment-agent-deployment.yaml 2>/dev/null || true
 
           echo ""
           echo "Final image references:"
@@ -597,6 +605,7 @@ jobs:
           kubectl apply -f ${{ env.TF_DIR }}/k8s/screening-agent-deployment.yaml
           kubectl apply -f ${{ env.TF_DIR }}/k8s/audit-agent-deployment.yaml 2>/dev/null || true
           kubectl apply -f ${{ env.TF_DIR }}/k8s/ranking-agent-deployment.yaml 2>/dev/null || true
+          kubectl apply -f ${{ env.TF_DIR }}/k8s/skill-assessment-agent-deployment.yaml 2>/dev/null || true
 
       - name: Verify Deployment
         run: |

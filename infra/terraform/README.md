@@ -26,6 +26,7 @@ infra/terraform/
     ├── screening-agent-deployment.yaml      # Fargate, HPA 1→5
     ├── audit-agent-deployment.yaml          # Fargate, HPA 1→5
     ├── ranking-agent-deployment.yaml        # Fargate, HPA 1→5
+    ├── skill-assessment-agent-deployment.yaml # Fargate, HPA 1→5
     └── secrets.yaml.example                 # Template for credentials
 
 .github/workflows/
@@ -63,6 +64,7 @@ graph TB
                     SCREEN["screening-agent"]
                     AUDIT["audit-agent"]
                     RANKING["ranking-agent"]
+                    SKILL["skill-assessment-agent"]
                 end
             end
             RDS[("RDS PostgreSQL 15<br/>db.t3.micro<br/>Encrypted")]
@@ -77,6 +79,7 @@ graph TB
     SCREEN --> RDS
     AUDIT --> RDS
     RANKING --> RDS
+    SKILL --> RDS
     PrivSub --> NAT --> IGW
     EKS -.-> ECR
 ```
@@ -86,7 +89,7 @@ graph TB
 | **VPC** | `10.0.0.0/16`, 2 AZs (`ap-southeast-1a`, `1b`), single NAT (cost-optimized) |
 | **EKS** | K8s 1.32, public+private endpoint, API/audit/authenticator logging. Root & all IAM users granted ClusterAdmin via Access Entries. |
 | **Node Group** | `t3.small`, 1–4 nodes (managed node group), hosts the `frontend` namespace. |
-| **Fargate** | `services` namespace — coordinator, resume-intake, screening, audit, ranking agents |
+| **Fargate** | `services` namespace — coordinator, resume-intake, screening, audit, ranking, skill-assessment agents |
 | **RDS** | PostgreSQL 15, gp2 storage (20 GB), 0-day backups (Free Tier) |
 | **ECR** | 4 repos, immutable tags, scan-on-push, 10-image lifecycle cleanup |
 | **Security** | Node security groups configured with NodePort ingress (30000-32767) for ELB health checks. |
@@ -318,6 +321,9 @@ kubectl apply -f k8s/frontend-deployment.yaml
 kubectl apply -f k8s/coordinator-agent-deployment.yaml
 kubectl apply -f k8s/resume-intake-agent-deployment.yaml
 kubectl apply -f k8s/screening-agent-deployment.yaml
+kubectl apply -f k8s/audit-agent-deployment.yaml
+kubectl apply -f k8s/ranking-agent-deployment.yaml
+kubectl apply -f k8s/skill-assessment-agent-deployment.yaml
 ```
 
 ### Step 7 — Verify

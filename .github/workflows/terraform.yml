@@ -215,6 +215,7 @@ jobs:
           SCREEN_TAG=$(kubectl get deployment screening-agent -n services -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null | awk -F: '{print $NF}')
           AUDIT_TAG=$(kubectl get deployment audit-agent -n services -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null | awk -F: '{print $NF}')
           RANKING_TAG=$(kubectl get deployment ranking-agent -n services -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null | awk -F: '{print $NF}')
+          SKILL_TAG=$(kubectl get deployment skill-assessment-agent -n services -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null | awk -F: '{print $NF}')
 
           FE_TAG=${FE_TAG:-latest}
           COORD_TAG=${COORD_TAG:-latest}
@@ -222,6 +223,7 @@ jobs:
           SCREEN_TAG=${SCREEN_TAG:-latest}
           AUDIT_TAG=${AUDIT_TAG:-latest}
           RANKING_TAG=${RANKING_TAG:-latest}
+          SKILL_TAG=${SKILL_TAG:-latest}
 
           echo "Image tags:"
           echo "  frontend:            $FE_TAG"
@@ -230,6 +232,7 @@ jobs:
           echo "  screening-agent:     $SCREEN_TAG"
           echo "  audit-agent:         $AUDIT_TAG"
           echo "  ranking-agent:       $RANKING_TAG"
+          echo "  skill-assessment-agent: $SKILL_TAG"
 
           # Replace account and region in all deployment files
           for file in ${{ env.TF_DIR }}/k8s/*-deployment.yaml; do
@@ -250,6 +253,7 @@ jobs:
           sed -i "s/<IMAGE_TAG>/$SCREEN_TAG/g" ${{ env.TF_DIR }}/k8s/screening-agent-deployment.yaml
           sed -i "s/<IMAGE_TAG>/$AUDIT_TAG/g" ${{ env.TF_DIR }}/k8s/audit-agent-deployment.yaml 2>/dev/null || true
           sed -i "s/<IMAGE_TAG>/$RANKING_TAG/g" ${{ env.TF_DIR }}/k8s/ranking-agent-deployment.yaml 2>/dev/null || true
+          sed -i "s/<IMAGE_TAG>/$SKILL_TAG/g" ${{ env.TF_DIR }}/k8s/skill-assessment-agent-deployment.yaml 2>/dev/null || true
 
           echo ""
           echo "Final image references:"
@@ -291,6 +295,7 @@ jobs:
           kubectl apply -f ${{ env.TF_DIR }}/k8s/screening-agent-deployment.yaml
           kubectl apply -f ${{ env.TF_DIR }}/k8s/audit-agent-deployment.yaml 2>/dev/null || true
           kubectl apply -f ${{ env.TF_DIR }}/k8s/ranking-agent-deployment.yaml 2>/dev/null || true
+          kubectl apply -f ${{ env.TF_DIR }}/k8s/skill-assessment-agent-deployment.yaml 2>/dev/null || true
 
       - name: Verify Deployment
         run: |

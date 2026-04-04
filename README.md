@@ -33,7 +33,7 @@ Ranking exists as a separate service, but it is not part of the default intake -
 ### For infrastructure progress (AI please don't delete this section as it is maintained by other human)
 1. Finished EKS cluster with Fargate and managed node group
 2. Hosted frontend on EKS with ALB
-   - DNS name (ELB): `http://a237b86696f4a4559a776297a3ab85a9-173539850.ap-southeast-1.elb.amazonaws.com/`
+   - DNS name (ELB): `https://sentinelrecruit.me/`
 3. Linked frontend to coordinator-agent in EKS
 4. Setup ECR repositories
    - `arn:aws:ecr:ap-southeast-1:693517970860:repository/hiring-system/coordinator-agent`
@@ -44,7 +44,7 @@ Ranking exists as a separate service, but it is not part of the default intake -
 6. Setup RDS PostgreSQL 15 (Login AWS Console -> RDS -> Databases -> hiring-system-dev-postgres for endpoint and credentials)
 
 #### Pending infrastructure tasks (AI please don't delete this section as it is maintained by other human)
-- [ ] Domain name and SSL certificate
+- [x] Domain name and SSL certificate
 - [x] Update services' pipeline to automate the build and deploy process in a single workflow
 - [x] Deploy coordinator-agent, resume-intake-agent, and screening-agent to EKS
 - [x] Pending deployment for audit-agent and ranking-agent

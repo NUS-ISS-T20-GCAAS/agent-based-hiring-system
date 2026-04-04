@@ -29,7 +29,7 @@ jobs:
           if [ -n "$SERVICES" ]; then
             # Handle the "all" option explicitly
             if [ "$SERVICES" = "all" ]; then
-              SERVICES="coordinator-agent,resume-intake-agent,screening-agent,ranking-agent,audit-agent"
+              SERVICES="coordinator-agent,resume-intake-agent,screening-agent,ranking-agent,audit-agent,skill-assessment-agent"
             fi
             
             # Format the output for the matrix array
