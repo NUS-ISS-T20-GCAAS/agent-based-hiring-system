@@ -59,6 +59,7 @@
 │       │   ├── ranking-agent-deployment.yaml
 │       │   ├── resume-intake-agent-deployment.yaml
 │       │   ├── screening-agent-deployment.yaml
+│       │   ├── skill-assessment-agent-deployment.yaml
 │       │   └── secrets.yaml.example
 │       ├── outputs.tf
 │       ├── rds.tf

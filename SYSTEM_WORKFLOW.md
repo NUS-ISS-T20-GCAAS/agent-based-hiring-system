@@ -4,21 +4,22 @@ This document describes the workflow implemented in the current codebase.
 
 ## 1. Workflow Summary
 
-The primary synchronous pipeline is:
+The main persisted workflow has two entry modes:
 
-1. A request reaches the coordinator through `POST /jobs` or a resume upload endpoint.
-2. The coordinator upserts the job, creates the candidate, and starts a workflow run.
-3. The coordinator sends resume data to the Resume Intake Agent.
-4. The Resume Intake Agent returns a structured candidate profile artifact.
-5. The coordinator sends the parsed profile plus job context to the Skill Assessment Agent.
-6. The Skill Assessment Agent returns a competency and gap-analysis artifact with `skills_score`.
-7. The coordinator sends the parsed profile plus job context, along with the skill artifact, to the Screening Agent.
-8. The Screening Agent returns qualification scores, recommendation signals, and review flags.
-9. The coordinator builds an audit payload from current stats, candidates, decisions, and the latest screening result.
-10. The coordinator sends that payload to the Audit Agent.
-11. The Audit Agent returns an audit artifact with risk and review signals.
-12. The coordinator persists all artifacts, updates candidate scores and review state, and marks the workflow run as completed.
-13. The frontend reads jobs, candidates, stats, decision history, and audit output from the coordinator.
+1. `POST /jobs` runs a single candidate workflow immediately.
+2. `POST /candidates/upload` and `POST /candidates/batch-upload` parse resume files, enqueue workflow jobs in Postgres, and return `202 Accepted`.
+3. The coordinator worker claims queued jobs, upserts the job, creates the candidate, and starts a workflow run.
+4. The coordinator sends resume data to the Resume Intake Agent.
+5. The Resume Intake Agent returns a structured candidate profile artifact.
+6. The coordinator sends the parsed profile plus job context to the Skill Assessment Agent.
+7. The Skill Assessment Agent returns a competency and gap-analysis artifact with `skills_score`.
+8. The coordinator sends the parsed profile plus job context, along with the skill artifact, to the Screening Agent.
+9. The Screening Agent returns qualification scores, recommendation signals, and review flags.
+10. The coordinator builds an audit payload from current stats, candidates, decisions, and the latest screening result.
+11. The coordinator sends that payload to the Audit Agent.
+12. The Audit Agent returns an audit artifact with risk and review signals.
+13. The coordinator persists all artifacts, updates candidate scores and review state, and marks the workflow run as completed.
+14. The frontend reads jobs, candidates, stats, decision history, handoff traces, and audit output from the coordinator.
 
 The Ranking Agent is separate from this default flow. It is invoked manually through `POST /jobs/{job_id}/rank`.
 
@@ -28,7 +29,7 @@ The Ranking Agent is separate from this default flow. It is invoked manually thr
 flowchart TD
     A["Recruiter / User"] --> B["Frontend"]
     B --> C["Coordinator API"]
-    C --> D["Postgres<br/>jobs, candidates, workflow_runs"]
+    C --> D["Postgres<br/>jobs, candidates, workflow_runs, workflow_queue"]
     C --> E["Resume Intake Agent"]
     E --> F["resume_intake_result artifact"]
     F --> C
@@ -50,6 +51,10 @@ flowchart TD
 
 ## 3. Entry Points
 
+### `POST /jobs/create`
+
+This endpoint creates or updates job metadata only. It does not enqueue or run a candidate workflow.
+
 ### `POST /jobs`
 
 This endpoint is not just job creation. It immediately starts a full workflow run for one candidate input.
@@ -70,14 +75,14 @@ Optional request fields:
 
 ### `POST /candidates/upload`
 
-Uploads one file for an existing job:
+Uploads one file for an existing job, parses it in the coordinator, enqueues a workflow job, and returns `202 Accepted`:
 
 - query param: `job_id`
 - multipart field: `file`
 
 ### `POST /candidates/batch-upload`
 
-Uploads multiple files for an existing job:
+Uploads multiple files for an existing job, parses them in the coordinator, enqueues workflow jobs, and returns `202 Accepted`:
 
 - query param: `job_id`
 - multipart field: `files`
@@ -88,6 +93,10 @@ Supported upload types:
 - `.pdf`
 - `.docx`
 
+### `GET /jobs/{job_id}/handoffs`
+
+Returns a derived handoff trace built from the persisted workflow artifacts for a job.
+
 ## 4. Step-By-Step Flow
 
 ### Step 1: Job context is prepared
@@ -95,7 +104,7 @@ Supported upload types:
 The coordinator either:
 
 - uses the job data sent to `POST /jobs`, or
-- looks up the existing job before processing uploaded resumes.
+- looks up the existing job before processing queued uploaded resumes.
 
 When listing jobs back to the frontend, the coordinator returns normalized fields such as:
 
@@ -257,6 +266,7 @@ The main persisted tables are:
 - `candidates`
 - `workflow_runs`
 - `artifacts`
+- `workflow_queue`
 
 Relevant schema additions in the current migration set:
 

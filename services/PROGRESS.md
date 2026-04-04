@@ -30,7 +30,7 @@ Job creation is now separated from workflow execution through a metadata-only `P
 
 Ranking is implemented as a standalone manual step rather than part of the default pipeline.
 
-OpenAI model hooks exist for resume intake, screening, and audit. Real model-backed execution still depends on `OPENAI_API_KEY`.
+OpenAI model hooks exist for resume intake, skill assessment, screening, and audit. Real model-backed execution still depends on `OPENAI_API_KEY`.
 
 ---
 
@@ -101,14 +101,18 @@ OpenAI model hooks exist for resume intake, screening, and audit. Real model-bac
 - [x] `GET /jobs/{job_id}`
 - [x] `POST /jobs/{job_id}/rank`
 - [x] `GET /jobs/{job_id}/artifacts`
+- [x] `GET /jobs/{job_id}/handoffs`
 - [x] `GET /candidates`
 - [x] `GET /candidates/{candidate_id}`
+- [x] `DELETE /candidates/{candidate_id}`
 - [x] `GET /candidates/{candidate_id}/decisions`
 - [x] `POST /candidates/upload`
 - [x] `POST /candidates/batch-upload`
 - [x] `GET /stats`
 - [x] `GET /agents/status`
 - [x] `GET /audit/bias-check`
+- [x] `GET /health`
+- [x] WebSocket `/ws`
 
 ### Testing Surface
 - [x] Coordinator route tests

@@ -62,7 +62,7 @@ Ports:
 ## Apply Migrations
 
 ```bash
-sh /Users/isaactan/Projects/agent-based-hiring-system/db/migrate.sh /Users/isaactan/Projects/agent-based-hiring-system/services/docker-compose.yml
+sh db/migrate.sh services/docker-compose.yml
 ```
 
 Use this when you want to re-apply the schema manually against an already-running local database.
@@ -106,12 +106,15 @@ Parsing dependencies are installed in `coordinator-agent/requirements.txt`.
 ## Implemented Coordinator APIs
 
 - `POST /jobs`
+- `POST /jobs/create`
 - `GET /jobs`
 - `GET /jobs/{job_id}`
 - `POST /jobs/{job_id}/rank`
 - `GET /jobs/{job_id}/artifacts`
+- `GET /jobs/{job_id}/handoffs`
 - `GET /candidates`
 - `GET /candidates/{candidate_id}`
+- `DELETE /candidates/{candidate_id}`
 - `GET /candidates/{candidate_id}/decisions`
 - `POST /candidates/upload`
 - `POST /candidates/batch-upload`
@@ -119,6 +122,7 @@ Parsing dependencies are installed in `coordinator-agent/requirements.txt`.
 - `GET /agents/status`
 - `GET /audit/bias-check`
 - `GET /health`
+- WebSocket `/ws`
 
 ## Notes
 

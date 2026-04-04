@@ -34,7 +34,7 @@ Current gaps:
 - ranking is manual-only and should remain a separate layer from screening/audit decisions
 - uploads now enqueue into a Postgres-backed worker, but there is not yet a separate multi-process queue stack such as Redis/Celery
 - heuristic extraction and explanations still have room to improve
-- the new skill-assessment artifact is heuristic-first and can be upgraded later with richer model-backed competency analysis
+- the skill-assessment service now supports model-backed execution, but its competency analysis and explanations can still be improved
 
 ## Package To Add
 
@@ -44,7 +44,7 @@ Recommended shortlist, ranked by expected project value:
    Best fit for showing real multi-agent orchestration, stateful workflows, checkpoints, and human-in-the-loop design.
 
 2. `redis` + `celery`
-   Best fit for solving the current synchronous upload bottleneck through background jobs, task queues, and lightweight caching.
+   Best fit for scaling beyond the current in-process Postgres-backed worker with more explicit background job orchestration and retry controls.
 
 3. `langfuse`
    Best fit for demo and report visibility through tracing, prompt/version tracking, and LLM observability.
