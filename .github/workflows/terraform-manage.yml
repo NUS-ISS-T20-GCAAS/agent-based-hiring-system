@@ -595,6 +595,9 @@ jobs:
           echo "=== Applying Namespaces ==="
           kubectl apply -f ${{ env.TF_DIR }}/k8s/namespaces.yaml
 
+          echo "=== Applying aws-logging ConfigMap (Fargate log router) ==="
+          kubectl apply -f ${{ env.TF_DIR }}/k8s/aws-logging.yaml
+
           echo "=== Applying Secrets ==="
           kubectl apply -f ${{ env.TF_DIR }}/k8s/secrets.yaml
 
