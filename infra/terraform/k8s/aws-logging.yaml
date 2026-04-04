@@ -1,57 +1,40 @@
 # ──────────────────────────────────────────────────────────────────────────────
-# aws-logging ConfigMap
+# aws-observability Namespace + aws-logging ConfigMap
 #
-# Required by the AWS Fargate log router (fluent-bit) in EVERY namespace that
-# runs Fargate pods.  Without this configmap the scheduler emits the warning:
-#   "Disabled logging because aws-logging configmap was not found"
+# The Fargate log router (fluent-bit sidecar) ONLY looks for the ConfigMap
+# named "aws-logging" in the "aws-observability" namespace — NOT in the
+# application namespace. The namespace MUST have the label:
+#   aws-observability: enabled
+#
+# This single ConfigMap applies to ALL Fargate pods across ALL namespaces.
 #
 # Each service gets its own CloudWatch log group using log_group_template,
 # which resolves the pod's Kubernetes "app" label at runtime:
 #
-#   frontend           → /aws/eks/hiring-system/fargate/frontend
-#   coordinator-agent  → /aws/eks/hiring-system/fargate/coordinator-agent
-#   screening-agent    → /aws/eks/hiring-system/fargate/screening-agent
-#   resume-intake-agent→ /aws/eks/hiring-system/fargate/resume-intake-agent
-#   audit-agent        → /aws/eks/hiring-system/fargate/audit-agent
-#   ranking-agent      → /aws/eks/hiring-system/fargate/ranking-agent
+#   coordinator-agent      → /aws/eks/hiring-system/fargate/coordinator-agent
+#   screening-agent        → /aws/eks/hiring-system/fargate/screening-agent
+#   resume-intake-agent    → /aws/eks/hiring-system/fargate/resume-intake-agent
+#   audit-agent            → /aws/eks/hiring-system/fargate/audit-agent
+#   ranking-agent          → /aws/eks/hiring-system/fargate/ranking-agent
 #   skill-assessment-agent → /aws/eks/hiring-system/fargate/skill-assessment-agent
 #
 # Ref: https://docs.aws.amazon.com/eks/latest/userguide/fargate-logging.html
 # ──────────────────────────────────────────────────────────────────────────────
 
-# ── frontend namespace ────────────────────────────────────────────────────────
+# ── Required namespace with mandatory label ───────────────────────────────────
 apiVersion: v1
-kind: ConfigMap
+kind: Namespace
 metadata:
-  name: aws-logging
-  namespace: frontend
-data:
-  flb_log_cw: "true"
-  output.conf: |
-    [OUTPUT]
-        Name              cloudwatch_logs
-        Match             *
-        region            ap-southeast-1
-        log_group_template /aws/eks/hiring-system/fargate/$kubernetes['labels']['app']
-        log_stream_prefix pod/
-        auto_create_group true
-  filters.conf: |
-    [FILTER]
-        Name  kubernetes
-        Match *
-  parsers.conf: |
-    [PARSER]
-        Name        json
-        Format      json
-        Time_Key    time
-        Time_Format %Y-%m-%dT%H:%M:%S.%LZ
+  name: aws-observability
+  labels:
+    aws-observability: enabled
 ---
-# ── services namespace ────────────────────────────────────────────────────────
+# ── Fluent Bit config for Fargate log router ──────────────────────────────────
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: aws-logging
-  namespace: services
+  namespace: aws-observability
 data:
   flb_log_cw: "true"
   output.conf: |
