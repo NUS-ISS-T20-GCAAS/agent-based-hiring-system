@@ -135,6 +135,12 @@ jobs:
             --name ${{ steps.tf-outputs.outputs.eks_cluster }} \
             --region ${{ env.AWS_REGION }}
 
+      - name: Apply aws-logging ConfigMap
+        run: |
+          # Must be applied before any service deployment so the Fargate log
+          # router can find the configmap and enable CloudWatch log shipping.
+          kubectl apply -f ${{ env.TF_DIR }}/k8s/aws-logging.yaml
+
       - name: Replace Placeholders and Apply to Kubernetes
         run: |
           ACCOUNT_ID="${{ steps.tf-outputs.outputs.account_id }}"

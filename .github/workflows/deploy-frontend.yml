@@ -158,6 +158,13 @@ jobs:
           sed -i "s|<ACM_CERTIFICATE_ARN>|${{ steps.tf-outputs.outputs.acm_arn }}|g" ${{ env.TF_DIR }}/k8s/frontend-deployment.yaml
           sed -i "s/<PUBLIC_SUBNET_IDS>/${{ steps.tf-outputs.outputs.subnets }}/g" ${{ env.TF_DIR }}/k8s/frontend-deployment.yaml
           
+      - name: Apply aws-logging ConfigMap
+        run: |
+          # Must be applied before the deployment so the Fargate log router
+          # can find the configmap and enable CloudWatch log shipping.
+          # Apply only the frontend section (namespace: frontend) from the shared file.
+          kubectl apply -f ${{ env.TF_DIR }}/k8s/aws-logging.yaml
+
       - name: Apply Blueprint to Kubernetes
         run: |
           kubectl apply -f ${{ env.TF_DIR }}/k8s/frontend-deployment.yaml
