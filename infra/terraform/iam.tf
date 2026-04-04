@@ -103,6 +103,34 @@ resource "aws_iam_role_policy_attachment" "fargate_ecr_read" {
   role       = aws_iam_role.fargate_pod_execution.name
 }
 
+# Fargate log router needs permissions to write to CloudWatch Logs
+resource "aws_iam_policy" "fargate_logging" {
+  name        = "${local.cluster_name}-fargate-logging-policy"
+  description = "Allows Fargate fluent bit to write to CloudWatch Logs"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:DescribeLogStreams",
+          "logs:PutLogEvents",
+          "logs:PutRetentionPolicy"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "fargate_logging_attachment" {
+  policy_arn = aws_iam_policy.fargate_logging.arn
+  role       = aws_iam_role.fargate_pod_execution.name
+}
+
 # ════════════════════════════════════════════════
 #  OIDC Provider for IRSA (IAM Roles for Service Accounts)
 # ════════════════════════════════════════════════
