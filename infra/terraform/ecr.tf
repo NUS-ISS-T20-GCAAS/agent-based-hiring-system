@@ -19,7 +19,7 @@ resource "aws_ecr_repository" "services" {
   for_each = toset(local.ecr_repositories)
 
   name                 = "${var.project_name}/${each.key}"
-  image_tag_mutability = "IMMUTABLE"
+  image_tag_mutability = "MUTABLE"
   force_delete         = var.environment == "dev" ? true : false
 
   image_scanning_configuration {

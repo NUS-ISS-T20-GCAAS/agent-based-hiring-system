@@ -37,21 +37,31 @@ metadata:
   namespace: aws-observability
 data:
   flb_log_cw: "true"
+  filters.conf: |
+    [FILTER]
+        Name parser
+        Match *
+        Key_name log
+        Parser crio
+    [FILTER]
+        Name kubernetes
+        Match kube.*
+        Merge_Log On
+        Keep_Log Off
+        Buffer_Size 0
+        Kube_Meta_Cache_TTL 300s
   output.conf: |
     [OUTPUT]
         Name              cloudwatch_logs
-        Match             *
+        Match             kube.*
         region            ap-southeast-1
         log_group_template /aws/eks/hiring-system/fargate/$kubernetes['labels']['app']
         log_stream_prefix pod/
         auto_create_group true
-  filters.conf: |
-    [FILTER]
-        Name  kubernetes
-        Match *
   parsers.conf: |
     [PARSER]
-        Name        json
-        Format      json
+        Name crio
+        Format Regex
+        Regex ^(?<time>[^ ]+) (?<stream>stdout|stderr) (?<logtag>P|F) (?<log>.*)$
         Time_Key    time
-        Time_Format %Y-%m-%dT%H:%M:%S.%LZ
+        Time_Format %Y-%m-%dT%H:%M:%S.%L%z
