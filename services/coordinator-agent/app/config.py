@@ -1,5 +1,9 @@
 import os
 
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+OPENAI_TIMEOUT_SEC = float(os.getenv("OPENAI_TIMEOUT_SEC", "30"))
+
 RESUME_INTAKE_AGENT_URL = os.getenv("RESUME_INTAKE_AGENT_URL", "http://resume-intake-agent:8000")
 SKILL_ASSESSMENT_AGENT_URL = os.getenv("SKILL_ASSESSMENT_AGENT_URL", "http://skill-assessment-agent:8000")
 SCREENING_AGENT_URL = os.getenv("SCREENING_AGENT_URL", "http://screening-agent:8000")

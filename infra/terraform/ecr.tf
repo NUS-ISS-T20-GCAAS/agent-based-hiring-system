@@ -8,6 +8,7 @@ locals {
     "coordinator-agent",
     "resume-intake-agent",
     "screening-agent",
+    "skill-assessment-agent",
     "ranking-agent",
     "audit-agent",
     "skill-assessment-agent"

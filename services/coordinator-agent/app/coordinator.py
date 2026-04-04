@@ -1,6 +1,8 @@
+from __future__ import annotations
+
 import uuid
 import time
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from decimal import Decimal
 import requests
 from fastapi import HTTPException
@@ -9,6 +11,7 @@ from app.events import emit_agent_activity, emit_candidate_update
 from app.handoff_trace import build_request_handoff, build_response_handoff
 from app.schemas import JobRequest, JobResponse, RunRequest, Artifact
 from app.logger import get_logger
+from app.llm import CoordinatorLLM
 from app.config import (
     AUDIT_AGENT_URL,
     RESUME_INTAKE_AGENT_URL,
@@ -19,6 +22,7 @@ from app.config import (
 from app.repository import CoordinatorRepository
 
 logger = get_logger("coordinator")
+coordinator_llm = CoordinatorLLM()
 
 MAX_RETRIES = 3
 RETRY_DELAY_SEC = 0.5
@@ -34,6 +38,89 @@ def _json_safe(value):
     if isinstance(value, list):
         return [_json_safe(item) for item in value]
     return value
+
+
+def _normalize_lower_string_list(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for item in value:
+        if not isinstance(item, str):
+            continue
+        cleaned = " ".join(item.strip().lower().split())
+        if not cleaned or cleaned in seen:
+            continue
+        seen.add(cleaned)
+        normalized.append(cleaned)
+    return normalized[:8]
+
+
+def _build_orchestration_plan(
+    request: JobRequest,
+    *,
+    entity_id: str,
+    correlation_id: str,
+) -> Artifact | None:
+    if not coordinator_llm.enabled:
+        return None
+
+    try:
+        plan = coordinator_llm.plan_workflow(
+            job_id=entity_id,
+            job_description=request.job_description,
+            resume_url=request.resume_url,
+            resume_text=request.resume_text or "",
+            job_requirements={
+                "required_skills": request.required_skills,
+                "preferred_skills": request.preferred_skills,
+                "min_years_experience": request.min_years_experience,
+                "education_level": request.education_level,
+            },
+        )
+    except Exception as exc:
+        logger.error(
+            "coordinator_llm_plan_failed",
+            entity_id=entity_id,
+            correlation_id=correlation_id,
+            error=str(exc),
+        )
+        return None
+
+    try:
+        confidence = float(plan.get("confidence"))
+    except (AttributeError, TypeError, ValueError):
+        confidence = 0.5
+
+    confidence = max(0.0, min(1.0, confidence))
+    payload = {
+        "priority_skills": _normalize_lower_string_list(plan.get("priority_skills")),
+        "screening_focus": _normalize_lower_string_list(plan.get("screening_focus")),
+        "audit_focus": _normalize_lower_string_list(plan.get("audit_focus")),
+        "risk_flags": _normalize_lower_string_list(plan.get("risk_flags")),
+        "orchestration_notes": _normalize_lower_string_list(plan.get("orchestration_notes")),
+        "confidence": confidence,
+    }
+    note_summary = ", ".join(payload["orchestration_notes"][:3]) or "no special notes"
+
+    return Artifact(
+        artifact_id=str(uuid.uuid4()),
+        entity_id=entity_id,
+        correlation_id=correlation_id,
+        agent_id="coordinator-agent",
+        agent_type="coordinator",
+        artifact_type="workflow_orchestration_plan",
+        payload=payload,
+        confidence=confidence,
+        explanation=(
+            f"Coordinator generated an orchestration plan focused on "
+            f"{', '.join(payload['priority_skills'][:3]) or 'core requirements'}. "
+            f"Notes: {note_summary}."
+        ),
+        created_at=datetime.now(timezone.utc).isoformat(),
+        version=1,
+    )
 
 
 def _screening_status(screening_payload: dict | None) -> tuple[str, str]:
@@ -67,6 +154,18 @@ def _normalize_reason(reason: object) -> str | None:
     return normalized or None
 
 
+def _namespace_reason(reason: object, prefix: str) -> str | None:
+    normalized = _normalize_reason(reason)
+    if not normalized:
+        return None
+
+    lowered = normalized.lower()
+    if lowered.startswith("screening:") or lowered.startswith("audit:"):
+        return normalized
+
+    return f"{prefix}: {normalized}"
+
+
 def _dedupe_reasons(reasons: list[str]) -> list[str]:
     seen: set[str] = set()
     deduped: list[str] = []
@@ -78,15 +177,9 @@ def _dedupe_reasons(reasons: list[str]) -> list[str]:
     return deduped
 
 
-def _build_review_state(
-    screening_payload: dict | None,
-    audit_payload: dict | None,
-) -> dict:
+def _build_review_state(screening_payload: dict | None) -> dict:
     screening_payload = screening_payload or {}
-    audit_payload = audit_payload or {}
-
     screening_required = bool(screening_payload.get("needs_human_review"))
-    audit_required = bool(audit_payload.get("review_required"))
 
     reasons: list[str] = []
 
@@ -94,36 +187,14 @@ def _build_review_state(
         screening_reasons = screening_payload.get("review_reasons")
         if isinstance(screening_reasons, list):
             for item in screening_reasons:
-                normalized = _normalize_reason(item)
+                normalized = _namespace_reason(item, "Screening")
                 if normalized:
-                    reasons.append(f"Screening: {normalized}")
-        if not reasons:
+                    reasons.append(normalized)
+        if not any(reason.startswith("Screening:") for reason in reasons):
             reasons.append("Screening: candidate requires manual review")
 
-    if audit_required:
-        audit_flags = audit_payload.get("bias_flags")
-        if isinstance(audit_flags, list):
-            for flag in audit_flags:
-                normalized = _normalize_reason(str(flag).replace("_", " "))
-                if normalized:
-                    reasons.append(f"Audit: {normalized}")
-
-        if not any(reason.startswith("Audit:") for reason in reasons):
-            risk_level = _normalize_reason(audit_payload.get("risk_level"))
-            if risk_level:
-                reasons.append(f"Audit: risk level {risk_level}")
-            else:
-                reasons.append("Audit: workflow requires compliance review")
-
-    needs_human_review = screening_required or audit_required
-    if screening_required and audit_required:
-        escalation_source = "screening_and_audit"
-    elif screening_required:
-        escalation_source = "screening"
-    elif audit_required:
-        escalation_source = "audit"
-    else:
-        escalation_source = "none"
+    needs_human_review = screening_required
+    escalation_source = "screening" if screening_required else "none"
 
     return {
         "needs_human_review": needs_human_review,
@@ -140,6 +211,7 @@ def _build_audit_input(
     candidate_id: str,
     skill_assessment_payload: dict | None,
     screening_payload: dict | None,
+    orchestration_plan: dict | None = None,
 ) -> dict:
     screening_payload = screening_payload if isinstance(screening_payload, dict) else {}
     skill_assessment_payload = skill_assessment_payload if isinstance(skill_assessment_payload, dict) else {}
@@ -176,7 +248,24 @@ def _build_audit_input(
         "stats": stats,
         "candidates": patched_candidates,
         "decisions": decisions,
+        "orchestration_plan": orchestration_plan or {},
     }
+
+
+def _build_skill_assessment_input(artifact: Artifact | None) -> dict:
+    if not artifact or not isinstance(artifact.payload, dict):
+        return {}
+
+    payload = dict(artifact.payload)
+    try:
+        confidence = float(payload.get("confidence"))
+    except (TypeError, ValueError):
+        confidence = None
+
+    if confidence is None and artifact.confidence is not None:
+        payload["confidence"] = float(artifact.confidence)
+
+    return payload
 
 
 def _post_with_retries(
@@ -320,6 +409,60 @@ def run_job(
 
     current_step = "resume-intake"
     try:
+        if coordinator_llm.enabled:
+            _emit_handoff_trace(
+                build_request_handoff(
+                    stage="orchestration",
+                    entity_id=entity_id,
+                    candidate_id=candidate_id,
+                    correlation_id=correlation_id,
+                    input_data={
+                        "job_id": entity_id,
+                        "resume_url": request.resume_url,
+                        "resume_text": request.resume_text,
+                        "job_description": request.job_description,
+                        "job_requirements": job_requirements,
+                    },
+                )
+            )
+        orchestration_artifact = _build_orchestration_plan(
+            request,
+            entity_id=entity_id,
+            correlation_id=correlation_id,
+        )
+        orchestration_plan = (
+            orchestration_artifact.payload
+            if orchestration_artifact and isinstance(orchestration_artifact.payload, dict)
+            else {}
+        )
+        if orchestration_artifact:
+            repository.save_artifact(
+                job_id=entity_id,
+                candidate_id=candidate_id,
+                artifact=orchestration_artifact,
+            )
+            _emit_handoff_trace(
+                build_response_handoff(
+                    stage="orchestration",
+                    entity_id=entity_id,
+                    candidate_id=candidate_id,
+                    correlation_id=correlation_id,
+                    artifact_id=orchestration_artifact.artifact_id,
+                    artifact_type=orchestration_artifact.artifact_type,
+                    explanation=orchestration_artifact.explanation,
+                    confidence=orchestration_artifact.confidence,
+                    payload=orchestration_artifact.payload,
+                    timestamp=orchestration_artifact.created_at,
+                )
+            )
+            emit_agent_activity(
+                agent="coordinator",
+                message="Generated orchestration plan",
+                correlation_id=correlation_id,
+                entity_id=entity_id,
+                candidate_id=candidate_id,
+            )
+
         emit_agent_activity(
             agent="resume-intake",
             message=f"Starting resume intake for job {entity_id}",
@@ -381,6 +524,7 @@ def run_job(
                 "parsed_resume": intake_artifact.payload,
                 "resume_text": request.resume_text,
                 "job_requirements": job_requirements,
+                "orchestration_plan": orchestration_plan,
             },
         )
 
@@ -444,7 +588,8 @@ def run_job(
                 "job_description": request.job_description,
                 "parsed_resume": intake_artifact.payload,
                 "job_requirements": job_requirements,
-                "skill_assessment": skill_assessment_artifact.payload,
+                "skill_assessment": _build_skill_assessment_input(skill_assessment_artifact),
+                "orchestration_plan": orchestration_plan,
             },
         )
 
@@ -510,6 +655,7 @@ def run_job(
                 candidate_id=candidate_id,
                 skill_assessment_payload=skill_assessment_artifact.payload if isinstance(skill_assessment_artifact.payload, dict) else None,
                 screening_payload=screening_artifact.payload if isinstance(screening_artifact.payload, dict) else None,
+                orchestration_plan=orchestration_plan,
             ),
         )
 
@@ -557,7 +703,6 @@ def run_job(
         )
         review_state = _build_review_state(
             screening_artifact.payload if isinstance(screening_artifact.payload, dict) else None,
-            audit_artifact.payload if isinstance(audit_artifact.payload, dict) else None,
         )
         repository.complete_workflow(
             job_id=entity_id,

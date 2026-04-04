@@ -12,7 +12,7 @@ infra/terraform/
 ├── variables.tf             # All input variables with defaults
 ├── terraform.tfvars.example # Example values (copy to terraform.tfvars)
 ├── vpc.tf                   # VPC, subnets, IGW, NAT Gateway, routes
-├── ecr.tf                   # ECR repos (6) with scan-on-push & lifecycle
+├── ecr.tf                   # ECR repos (7) with scan-on-push & lifecycle
 ├── eks.tf                   # EKS cluster (K8s 1.32) + managed node group
 ├── eks-fargate.tf           # Fargate profiles (services + kube-system)
 ├── rds.tf                   # RDS PostgreSQL 15
@@ -24,6 +24,7 @@ infra/terraform/
     ├── coordinator-agent-deployment.yaml    # Fargate, HPA 1→5
     ├── resume-intake-agent-deployment.yaml  # Fargate, HPA 1→5
     ├── screening-agent-deployment.yaml      # Fargate, HPA 1→5
+    ├── skill-assessment-agent-deployment.yaml # Fargate, HPA 1→5
     ├── audit-agent-deployment.yaml          # Fargate, HPA 1→5
     ├── ranking-agent-deployment.yaml        # Fargate, HPA 1→5
     ├── skill-assessment-agent-deployment.yaml # Fargate, HPA 1→5
@@ -34,8 +35,9 @@ infra/terraform/
 ├── terraform-manage.yml     # Cost optimization targeted destroy/recreate (Manual)
 ├── deploy-db.yml            # SQL schema & migrations (automatic upon push to db/)
 ├── deploy-services.yml      # CI/CD for Python Agents to ECR & K8s
+├── frontend-build.yml       # Reusable GHCR frontend build workflow
 ├── deploy-frontend.yml      # CI/CD for Frontend React app to ECR & K8s
-└── build.yml                # Core reusable build & tests pipeline
+└── build.yml                # Core reusable service image build/push workflow
 ```
 
 ---
@@ -62,6 +64,7 @@ graph TB
                     COORD["coordinator-agent"]
                     RESUME["resume-intake-agent"]
                     SCREEN["screening-agent"]
+                    SKILL["skill-assessment-agent"]
                     AUDIT["audit-agent"]
                     RANKING["ranking-agent"]
                     SKILL["skill-assessment-agent"]
@@ -71,7 +74,7 @@ graph TB
         end
     end
 
-    ECR["ECR<br/>(4 repositories)"]
+    ECR["ECR<br/>(7 repositories)"]
 
     Internet --> IGW --> ALB --> FE
     COORD --> RDS
@@ -89,9 +92,9 @@ graph TB
 | **VPC** | `10.0.0.0/16`, 2 AZs (`ap-southeast-1a`, `1b`), single NAT (cost-optimized) |
 | **EKS** | K8s 1.32, public+private endpoint, API/audit/authenticator logging. Root & all IAM users granted ClusterAdmin via Access Entries. |
 | **Node Group** | `t3.small`, 1–4 nodes (managed node group), hosts the `frontend` namespace. |
-| **Fargate** | `services` namespace — coordinator, resume-intake, screening, audit, ranking, skill-assessment agents |
+| **Fargate** | `services` namespace — coordinator, resume-intake, screening, skill-assessment, audit, and ranking agents |
 | **RDS** | PostgreSQL 15, gp2 storage (20 GB), 0-day backups (Free Tier) |
-| **ECR** | 4 repos, immutable tags, scan-on-push, 10-image lifecycle cleanup |
+| **ECR** | 7 repos, immutable tags, scan-on-push, 10-image lifecycle cleanup |
 | **Security** | Node security groups configured with NodePort ingress (30000-32767) for ELB health checks. |
 
 ---
@@ -262,6 +265,7 @@ Unlike traditional setups, the repository is configured to **automatically** han
 
 - **`.github/workflows/terraform.yml`**: Automatically resolves the current AWS Account ID and Region, injecting them into the K8s manifests during the infra deployment.
 - **`.github/workflows/deploy-frontend.yml`**: Automatically builds and pushes the frontend image, then updates the K8s deployment to use the specific Git commit SHA.
+- **`.github/workflows/deploy-services.yml`**: Builds service images in GHCR, transfers successful builds into ECR, and applies only the matching backend manifests.
 
 ---
 
@@ -321,9 +325,9 @@ kubectl apply -f k8s/frontend-deployment.yaml
 kubectl apply -f k8s/coordinator-agent-deployment.yaml
 kubectl apply -f k8s/resume-intake-agent-deployment.yaml
 kubectl apply -f k8s/screening-agent-deployment.yaml
+kubectl apply -f k8s/skill-assessment-agent-deployment.yaml
 kubectl apply -f k8s/audit-agent-deployment.yaml
 kubectl apply -f k8s/ranking-agent-deployment.yaml
-kubectl apply -f k8s/skill-assessment-agent-deployment.yaml
 ```
 
 ### Step 7 — Verify
@@ -386,15 +390,15 @@ graph LR
     A --> K["Deploy K8s"]
 ```
 
-All jobs run **automatically end-to-end** when triggered — no environment approval gates needed.
+The workflow runs Validate → Plan → Apply → Deploy K8s when triggered, and GitHub Environment protection rules may require approval before `apply` or `deploy-k8s`.
 
 ### Cost Optimization Pipeline (`terraform-manage.yml`)
 
 A specialized, integrated workflow designed to reduce dev environment costs by destroying expensive resources over weekends/nights:
 
-1. **Destroy Job**: Captures live image tags (saves to artifacts), deletes `frontend` LoadBalancer service (prevents orphaned AWS LBs), and destroys EKS Control Plane, Node Groups, Fargate, and NAT Gateway (~$4.14/day savings). Retains RDS, ECR, VPC, and IAM.
+1. **Destroy Job**: Captures the image tags currently wired into the workflow, deletes the `frontend` LoadBalancer service (prevents orphaned AWS LBs), and destroys EKS Control Plane, Node Groups, Fargate, and NAT Gateway (~$4.14/day savings). Retains RDS, ECR, VPC, and IAM.
 2. **Recreate Job**: Paused securely behind a GitHub Environment approval gate. Upon manual approval, creates the infrastructure back.
-3. **Deploy K8s**: Restores all K8s deployments automatically matching the exact image tags captured prior to destruction.
+3. **Deploy K8s**: Restores the manifests currently handled by `terraform-manage.yml` using those captured image tags.
 
 ### Setup
 
@@ -412,7 +416,12 @@ A specialized, integrated workflow designed to reduce dev environment costs by d
 
 1. Go to **Actions → Terraform Infrastructure → Run workflow**
 2. Click **Run workflow**
-3. All 4 jobs execute automatically: Validate → Plan → Apply → Deploy K8s
+3. The workflow proceeds through Validate → Plan → Apply → Deploy K8s, subject to any approvals configured on the target GitHub Environments.
+
+## Current Workflow Note
+
+- `deploy-services.yml` now covers `coordinator-agent`, `resume-intake-agent`, `screening-agent`, `skill-assessment-agent`, `ranking-agent`, and `audit-agent`.
+- `terraform.yml` and `terraform-manage.yml` still hard-code a smaller service list when they capture or re-apply backend image tags, so keep those workflows in sync when new service manifests are added.
 
 ---
 

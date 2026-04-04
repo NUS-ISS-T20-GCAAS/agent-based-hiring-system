@@ -1,6 +1,7 @@
 from app.base_agent import BaseAgent
 from app.llm import ScreeningLLM
 from app.worker import (
+    evaluate_experience_alignment,
     coerce_screening_result,
     heuristic_screen_candidate,
     screen_with_skill_assessment,
@@ -61,6 +62,7 @@ class ScreeningAgent(BaseAgent):
         job_description = (input_data.get("job_description") or "").lower()
         job_requirements = input_data.get("job_requirements") or {}
         skill_assessment = input_data.get("skill_assessment") or {}
+        orchestration_plan = input_data.get("orchestration_plan") or {}
 
         # Track which method was used
         method_used = "llm"
@@ -89,7 +91,8 @@ class ScreeningAgent(BaseAgent):
                 llm_result = self.llm.score_candidate(
                     parsed_resume=parsed_resume,
                     job_description=job_description,
-                    job_requirements=job_requirements
+                    job_requirements=job_requirements,
+                    orchestration_plan=orchestration_plan,
                 )
 
                 result = coerce_screening_result(llm_result)
@@ -119,6 +122,21 @@ class ScreeningAgent(BaseAgent):
                 )
 
         # Enhance result with additional decision info
+        experience_alignment = evaluate_experience_alignment(
+            years_experience=result.get("years_experience"),
+            job_description=job_description,
+            job_requirements=job_requirements,
+        )
+
+        if experience_alignment["severe_overqualification"]:
+            max_allowed_score = experience_alignment.get("max_allowed_score")
+            if isinstance(max_allowed_score, (int, float)):
+                result["qualification_score"] = round(
+                    min(result["qualification_score"], float(max_allowed_score)),
+                    3,
+                )
+                result["meets_threshold"] = result["qualification_score"] >= QUALIFICATION_THRESHOLD
+
         decision = "PASS" if result["meets_threshold"] else "FAIL"
 
         # ── Human review flag ────────────────────────────────────────────────
@@ -130,6 +148,7 @@ class ScreeningAgent(BaseAgent):
             abs(result["qualification_score"] - QUALIFICATION_THRESHOLD) <= REVIEW_BAND
             or result["confidence"] < REVIEW_CONFIDENCE_FLOOR
             or method_used == "heuristic"
+            or experience_alignment["severe_overqualification"]
         )
 
         review_reasons = []
@@ -145,6 +164,8 @@ class ScreeningAgent(BaseAgent):
             )
         if method_used == "heuristic":
             review_reasons.append("LLM unavailable — heuristic fallback used")
+        if experience_alignment["review_reason"]:
+            review_reasons.append(experience_alignment["review_reason"])
         # ─────────────────────────────────────────────────────────────────────
 
         # Build detailed explanation
@@ -173,6 +194,8 @@ class ScreeningAgent(BaseAgent):
                     "review_band": REVIEW_BAND,
                     "confidence_floor": REVIEW_CONFIDENCE_FLOOR,
                     "method": method_used,
+                    "junior_role": experience_alignment["junior_role"],
+                    "overqualification_flag": experience_alignment["severe_overqualification"],
                 },
             },
             "confidence": result["confidence"],

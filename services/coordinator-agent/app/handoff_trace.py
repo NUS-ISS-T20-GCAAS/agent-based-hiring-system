@@ -5,6 +5,11 @@ from typing import Any
 
 
 STEP_DEFINITIONS: dict[str, dict[str, str]] = {
+    "orchestration": {
+        "agent": "coordinator",
+        "request_message": "Please plan how the coordinator should run this workflow and what each downstream stage should focus on.",
+        "response_fallback": "I created a workflow orchestration plan for the downstream agents.",
+    },
     "resume-intake": {
         "agent": "resume-intake",
         "request_message": "Please extract the candidate profile from the uploaded resume and normalize the core fields.",
@@ -33,6 +38,7 @@ STEP_DEFINITIONS: dict[str, dict[str, str]] = {
 }
 
 ARTIFACT_TYPE_TO_STAGE = {
+    "workflow_orchestration_plan": "orchestration",
     "resume_intake_result": "resume-intake",
     "skill_assessment_result": "skill-assessment",
     "qualification_screening_result": "screening",
@@ -206,6 +212,11 @@ def _historical_request_context(stage: str, row: dict[str, Any]) -> dict[str, An
             "candidate_id": row.get("candidate_id"),
             "requested_fields": ["name", "email", "skills", "years_experience"],
         }
+    if stage == "orchestration":
+        return {
+            "based_on": "job requirements + resume context",
+            "job_id": row.get("entity_id"),
+        }
     if stage == "skill-assessment":
         return {
             "based_on": "parsed resume + job requirements",
@@ -231,6 +242,16 @@ def _historical_request_context(stage: str, row: dict[str, Any]) -> dict[str, An
 
 
 def _build_request_preview(stage: str, input_data: dict[str, Any]) -> dict[str, Any]:
+    if stage == "orchestration":
+        job_requirements = input_data.get("job_requirements") if isinstance(input_data.get("job_requirements"), dict) else {}
+        preview = {
+            "job_id": input_data.get("job_id"),
+            "required_skills": _short_list(job_requirements.get("required_skills")),
+            "preferred_skills": _short_list(job_requirements.get("preferred_skills")),
+            "resume_text_chars": len(str(input_data.get("resume_text") or "")),
+        }
+        return _compact(preview)
+
     if stage == "resume-intake":
         resume_text = str(input_data.get("resume_text") or "")
         job_description = str(input_data.get("job_description") or "")
@@ -288,6 +309,15 @@ def _build_request_preview(stage: str, input_data: dict[str, Any]) -> dict[str, 
 
 
 def _build_response_preview(stage: str, payload: dict[str, Any]) -> dict[str, Any]:
+    if stage == "orchestration":
+        preview = {
+            "priority_skills": _short_list(payload.get("priority_skills")),
+            "screening_focus": _short_list(payload.get("screening_focus")),
+            "audit_focus": _short_list(payload.get("audit_focus")),
+            "risk_flags": _short_list(payload.get("risk_flags")),
+        }
+        return _compact(preview)
+
     if stage == "resume-intake":
         preview = {
             "name": payload.get("name"),

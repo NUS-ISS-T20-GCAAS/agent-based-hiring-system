@@ -42,6 +42,7 @@ class SkillAssessmentAgent(BaseAgent):
         return {
             "payload": {
                 "skills_score": result["skills_score"],
+                "confidence": result["confidence"],
                 "matched_required_skills": result["matched_required_skills"],
                 "matched_preferred_skills": result["matched_preferred_skills"],
                 "missing_required_skills": result["missing_required_skills"],

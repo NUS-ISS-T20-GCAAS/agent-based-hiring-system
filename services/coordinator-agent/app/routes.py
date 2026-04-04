@@ -499,6 +499,7 @@ async def _process_upload_files(
                     filename=filename,
                     request=request,
                 )
+                repository.mark_job_processing(job_id=job_id)
             except Exception as exc:
                 logger.error(
                     "workflow_enqueue_failed",

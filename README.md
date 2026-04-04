@@ -35,19 +35,21 @@ Ranking exists as a separate service, but it is not part of the default intake -
 2. Hosted frontend on EKS with ALB
    - DNS name (ELB): `https://sentinelrecruit.me/`
 3. Linked frontend to coordinator-agent in EKS
-4. Setup ECR repositories
-   - `arn:aws:ecr:ap-southeast-1:693517970860:repository/hiring-system/coordinator-agent`
-   - `arn:aws:ecr:ap-southeast-1:693517970860:repository/hiring-system/resume-intake-agent`
-   - `arn:aws:ecr:ap-southeast-1:693517970860:repository/hiring-system/screening-agent`
-   - `arn:aws:ecr:ap-southeast-1:693517970860:repository/hiring-system/frontend`
-5. Updated frontend's pipeline to push to ECR and deploy to EKS, merged frontend-build.yml into frontend-deploy.yml to automate the build and deploy process
+4. Terraform now defines ECR repositories for:
+   - `frontend`
+   - `coordinator-agent`
+   - `resume-intake-agent`
+   - `screening-agent`
+   - `skill-assessment-agent`
+   - `ranking-agent`
+   - `audit-agent`
+5. Frontend CI/CD now uses reusable `frontend-build.yml` and `deploy-frontend.yml` to build, transfer, and deploy the image
 6. Setup RDS PostgreSQL 15 (Login AWS Console -> RDS -> Databases -> hiring-system-dev-postgres for endpoint and credentials)
 
 #### Pending infrastructure tasks (AI please don't delete this section as it is maintained by other human)
 - [x] Domain name and SSL certificate
 - [x] Update services' pipeline to automate the build and deploy process in a single workflow
-- [x] Deploy coordinator-agent, resume-intake-agent, and screening-agent to EKS
-- [x] Pending deployment for audit-agent and ranking-agent
+- [x] Add build/deploy config coverage for coordinator-agent, resume-intake-agent, screening-agent, skill-assessment-agent, audit-agent, and ranking-agent
 - [x] Import database schema to hiring-system-dev-postgres
 - [x] Update coordinator-agent, resume-intake-agent, and screening-agent to use RDS PostgreSQL 15 (It seems DB connected in the frontend)
 
@@ -66,7 +68,7 @@ To minimize AWS costs when the environment is not in active use (saving ~$3.50/d
     *   **Kept resources:** VPC, Subnets, RDS (Database), ECR (Images). Current service image tags are automatically captured and saved.
 5.  **To Recreate (Start Working):**
     *   Set **Action** to `recreate`.
-    *   This will bring back the EKS Cluster and NAT Gateway, and automatically re-deploy all 6 services using their previously captured image tags.
+    *   This will bring back the EKS Cluster and NAT Gateway, then re-apply the manifests and image tags currently wired into `terraform-manage.yml`.
 
 > [!IMPORTANT]
 > Always use this workflow instead of a full `terraform destroy` to ensure your database data and network configuration are preserved!
@@ -85,8 +87,9 @@ To minimize AWS costs when the environment is not in active use (saving ~$3.50/d
 
 - Agents share a common artifact contract with `payload`, `confidence`, and `explanation`.
 - The coordinator is the system of record for workflow orchestration and persistence.
+- The coordinator can now generate an optional LLM-backed orchestration plan that is persisted and passed into downstream stages.
 - Agent-local shared memory is still present for service-level replay and diagnostics.
-- Resume intake, skill assessment, screening, and audit attempt OpenAI-backed execution when `OPENAI_API_KEY` is configured.
+- Resume intake, coordinator orchestration, skill assessment, screening, and audit attempt OpenAI-backed execution when `OPENAI_API_KEY` is configured.
 - Skill assessment now produces a distinct competency and gap-analysis artifact before screening.
 - Ranking is currently heuristic, but now produces recommendation-rich ranking artifacts while remaining a manual step.
 - Screening and audit can jointly escalate candidates for human review.
@@ -101,8 +104,10 @@ The coordinator currently exposes:
 - `GET /jobs/{job_id}`
 - `POST /jobs/{job_id}/rank`
 - `GET /jobs/{job_id}/artifacts`
+- `GET /jobs/{job_id}/handoffs`
 - `GET /candidates`
 - `GET /candidates/{candidate_id}`
+- `DELETE /candidates/{candidate_id}`
 - `GET /candidates/{candidate_id}/decisions`
 - `POST /candidates/upload`
 - `POST /candidates/batch-upload`
@@ -151,7 +156,9 @@ Implementation notes:
 
 Model-backed execution is currently wired for:
 
+- `coordinator-agent`
 - `resume-intake-agent`
+- `skill-assessment-agent`
 - `screening-agent`
 - `audit-agent`
 
@@ -217,7 +224,7 @@ make migrate-db-services
 
 ## Testing
 
-There are unit tests for the coordinator, resume intake, screening, ranking, and audit services under `services/*/tests`.
+There are unit tests for the coordinator, resume intake, skill assessment, screening, ranking, and audit services under `services/*/tests`.
 
 ## Documentation
 

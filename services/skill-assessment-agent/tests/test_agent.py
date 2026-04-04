@@ -39,6 +39,7 @@ class SkillAssessmentAgentTests(unittest.TestCase):
         )
 
         self.assertEqual(result["payload"]["skills_score"], 0.84)
+        self.assertEqual(result["payload"]["confidence"], 0.9)
         self.assertEqual(result["confidence"], 0.9)
         self.assertIn("Matched required skills", result["explanation"])
 

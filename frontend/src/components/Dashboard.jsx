@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Upload, Users, CheckCircle, XCircle, TrendingUp, Plus, RefreshCw } from 'lucide-react';
+import { Upload, Users, CheckCircle, XCircle, TrendingUp, Plus, RefreshCw, Eye, Briefcase, Sparkles } from 'lucide-react';
 import StatsCard from './StatsCard.jsx';
 import { formatPercent } from '../utils/helpers.js';
 
@@ -48,6 +48,7 @@ const Dashboard = ({
   const [jobForm, setJobForm] = useState(EMPTY_JOB_FORM);
   const [isSubmittingJob, setIsSubmittingJob] = useState(false);
   const [isJobModalOpen, setIsJobModalOpen] = useState(false);
+  const [previewJob, setPreviewJob] = useState(null);
 
   const handleFileChange = (e) => {
     const files = e.target.files;
@@ -163,6 +164,19 @@ const Dashboard = ({
                             +{job.required_skills.length - 3} more
                           </span>
                         )}
+                      </div>
+                      <div className="mt-4 flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setPreviewJob(job);
+                          }}
+                          className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          View Details
+                        </button>
                       </div>
                     </div>
                     {selectedJob === job.job_id && (
@@ -418,6 +432,115 @@ const Dashboard = ({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {previewJob && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 px-4 py-8">
+          <div className="modal-content w-full max-w-3xl overflow-y-auto rounded-3xl border border-slate-200 bg-white shadow-2xl max-h-[90vh]">
+            <div className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 px-6 py-5 backdrop-blur">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <div className="inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-blue-700">
+                    <Briefcase className="w-3.5 h-3.5" />
+                    Available Job
+                  </div>
+                  <h3 className="mt-3 text-2xl font-bold text-slate-900">{previewJob.title}</h3>
+                  <p className="mt-1 text-sm text-slate-500">{previewJob.job_id}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setPreviewJob(null)}
+                  className="rounded-lg px-3 py-2 text-sm font-medium text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-6 px-6 py-6">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Candidates</p>
+                  <p className="mt-2 text-2xl font-bold text-slate-900">{previewJob.candidates_count || 0}</p>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Experience</p>
+                  <p className="mt-2 text-lg font-bold text-slate-900">
+                    {previewJob.min_years_experience != null ? `${previewJob.min_years_experience}+ years` : 'Not specified'}
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Education</p>
+                  <p className="mt-2 text-lg font-bold text-slate-900">
+                    {previewJob.education_level || 'Not specified'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-white p-5">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-blue-600" />
+                  <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Job Description</h4>
+                </div>
+                <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-slate-700">
+                  {previewJob.job_description || 'No description provided.'}
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div className="rounded-2xl border border-blue-200 bg-blue-50 p-5">
+                  <h4 className="text-sm font-semibold uppercase tracking-wide text-blue-800">Required Skills</h4>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {previewJob.required_skills?.length > 0 ? (
+                      previewJob.required_skills.map((skill) => (
+                        <span key={skill} className="rounded-full border border-blue-200 bg-white px-3 py-1 text-xs font-semibold text-blue-700">
+                          {skill}
+                        </span>
+                      ))
+                    ) : (
+                      <p className="text-sm text-blue-800/80">No required skills recorded.</p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-purple-200 bg-purple-50 p-5">
+                  <h4 className="text-sm font-semibold uppercase tracking-wide text-purple-800">Preferred Skills</h4>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {previewJob.preferred_skills?.length > 0 ? (
+                      previewJob.preferred_skills.map((skill) => (
+                        <span key={skill} className="rounded-full border border-purple-200 bg-white px-3 py-1 text-xs font-semibold text-purple-700">
+                          {skill}
+                        </span>
+                      ))
+                    ) : (
+                      <p className="text-sm text-purple-800/80">No preferred skills recorded.</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setPreviewJob(null)}
+                  className="rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                >
+                  Close
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onJobSelect(previewJob.job_id);
+                    setPreviewJob(null);
+                  }}
+                  className="rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700"
+                >
+                  Select This Job
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

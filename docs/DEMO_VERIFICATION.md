@@ -22,12 +22,12 @@ Use this checklist before demos to confirm that the hiring workflow still works 
 4. Confirm `/health` shows the workflow queue moving through `pending` and `running`.
 5. Confirm candidates appear in `GET /candidates?job_id=...`.
 6. Confirm no candidate remains stuck in `processing` after the queue drains.
-7. Confirm `GET /jobs/{job_id}/artifacts` contains intake, screening, and audit artifacts for each candidate.
+7. Confirm `GET /jobs/{job_id}/artifacts` contains intake, skill assessment, screening, and audit artifacts for each candidate.
 8. Confirm `GET /stats?job_id=...` returns coherent totals.
 9. Confirm review-required state appears in candidate list and detail APIs.
 10. Trigger `POST /jobs/{job_id}/rank`.
 11. Confirm ranking metadata is persisted without overwriting screening/audit outcomes.
-12. Confirm websocket activity updates stream through intake, screening, audit, and workflow completion.
+12. Confirm websocket activity updates stream through intake, skill assessment, screening, audit, and workflow completion.
 
 ## 2026-04-01 Verification Summary
 
@@ -59,6 +59,7 @@ Notes:
 
 - the queue and websocket fixes behaved correctly during the live run
 - the system is functionally demo-ready
+- current code now also persists a skill-assessment artifact per completed candidate workflow, so artifact counts may be higher than this 2026-04-01 snapshot
 - fallback extraction and explanation quality are still the most visible product rough edges
 
 ## Suggested Re-Test After Future Changes

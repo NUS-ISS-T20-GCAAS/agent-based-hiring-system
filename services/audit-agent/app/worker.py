@@ -1,6 +1,42 @@
 from app.config import LOW_SELECTION_RATE_THRESHOLD, MIN_AUDIT_SAMPLE_SIZE
 
 
+def _coerce_bias_flags(values: object) -> list[str]:
+    if not isinstance(values, list):
+        return []
+
+    seen: set[str] = set()
+    normalized_flags: list[str] = []
+    for value in values:
+        if not isinstance(value, str):
+            continue
+        normalized = "_".join(
+            part for part in value.strip().lower().replace("-", "_").replace(" ", "_").split("_") if part
+        )
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        normalized_flags.append(normalized)
+    return normalized_flags
+
+
+def _coerce_recommendations(values: object) -> list[str]:
+    if not isinstance(values, list):
+        return []
+
+    seen: set[str] = set()
+    normalized_recommendations: list[str] = []
+    for value in values:
+        if not isinstance(value, str):
+            continue
+        normalized = " ".join(value.strip().split())
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        normalized_recommendations.append(normalized)
+    return normalized_recommendations
+
+
 def heuristic_audit_check(
     *,
     job_id: str | None,
@@ -29,7 +65,9 @@ def heuristic_audit_check(
         bias_flags.append("low_selection_rate")
         recommendations.append("Review screening thresholds and shortlisted decision criteria.")
 
-    if decisions and not any(str(d.get("decision_type", "")).endswith("result") for d in decisions):
+    if decisions and not any(
+        str(d.get("decision_type") or d.get("artifact_type") or "").endswith("result") for d in decisions
+    ):
         bias_flags.append("incomplete_decision_trail")
         recommendations.append("Ensure all candidate decisions are persisted before audit review.")
 
@@ -56,8 +94,8 @@ def heuristic_audit_check(
 
 
 def coerce_audit_result(result: dict) -> dict:
-    bias_flags = result.get("bias_flags")
-    recommendations = result.get("recommendations")
+    bias_flags = _coerce_bias_flags(result.get("bias_flags"))
+    recommendations = _coerce_recommendations(result.get("recommendations"))
     risk_level = str(result.get("risk_level") or "medium").lower()
     if risk_level not in {"low", "medium", "high"}:
         risk_level = "medium"
@@ -82,10 +120,45 @@ def coerce_audit_result(result: dict) -> dict:
         "selection_rate": max(0.0, min(1.0, selection_rate)),
         "total_candidates": int(result.get("total_candidates") or 0),
         "shortlisted": int(result.get("shortlisted") or 0),
-        "bias_flags": bias_flags if isinstance(bias_flags, list) else [],
+        "bias_flags": bias_flags,
         "risk_level": risk_level,
         "review_required": bool(result.get("review_required")),
-        "recommendations": recommendations if isinstance(recommendations, list) else [],
+        "recommendations": recommendations,
         "data_completeness": max(0.0, min(1.0, data_completeness)),
+        "confidence": max(0.0, min(1.0, confidence)),
+    }
+
+
+def normalize_audit_result(
+    *,
+    result: dict,
+    job_id: str | None,
+    stats: dict,
+    candidates: list[dict],
+    decisions: list[dict],
+) -> dict:
+    baseline = heuristic_audit_check(
+        job_id=job_id,
+        stats=stats,
+        candidates=candidates,
+        decisions=decisions,
+    )
+    coerced = coerce_audit_result(result)
+
+    bias_flags = list(baseline["bias_flags"])
+    risk_level = baseline["risk_level"]
+    recommendations = coerced["recommendations"] if bias_flags and coerced["recommendations"] else baseline["recommendations"]
+    confidence = coerced["confidence"] if coerced["confidence"] > 0 else baseline["confidence"]
+
+    return {
+        "job_id": baseline["job_id"],
+        "selection_rate": baseline["selection_rate"],
+        "total_candidates": baseline["total_candidates"],
+        "shortlisted": baseline["shortlisted"],
+        "bias_flags": bias_flags,
+        "risk_level": risk_level,
+        "review_required": baseline["review_required"],
+        "recommendations": recommendations,
+        "data_completeness": baseline["data_completeness"],
         "confidence": max(0.0, min(1.0, confidence)),
     }

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { AlertCircle, Trash2 } from 'lucide-react';
 import { formatDateTime, formatPercent, titleCase } from '../utils/helpers.js';
 
@@ -63,31 +63,141 @@ const shortId = (value) => {
   return `${text.slice(0, 8)}...${text.slice(-4)}`;
 };
 
-const AgentActivity = ({ activity, handoffs, loading, selectedJob, onClear }) => {
+const getTraceEventKey = (item, index) =>
+  item?.event_id || `${item?.timestamp || 'trace'}-${item?.direction || 'message'}-${item?.stage || 'stage'}-${index}`;
+
+const getPendingTraceActor = (trace) => {
+  if (!Array.isArray(trace) || trace.length === 0) {
+    return {
+      agent: 'coordinator',
+      direction: 'request',
+      message: 'Coordinator is waiting for the workflow to begin.',
+    };
+  }
+
+  const lastEvent = trace[trace.length - 1];
+  if (lastEvent.direction === 'request' && lastEvent.to_agent) {
+    return {
+      agent: lastEvent.to_agent,
+      direction: 'response',
+      message: `${formatAgentName(lastEvent.to_agent)} is working on the next response.`,
+    };
+  }
+
+  return {
+    agent: 'coordinator',
+    direction: 'request',
+    message: 'Coordinator is preparing the next handoff.',
+  };
+};
+
+const isRightAlignedAgent = (agent) => agent && agent !== 'coordinator';
+
+const TraceBubble = ({ children, className }) => {
+  const bodyRef = useRef(null);
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [isEntered, setIsEntered] = useState(false);
+  const [isContentVisible, setIsContentVisible] = useState(false);
+  const [measuredHeight, setMeasuredHeight] = useState(0);
+
+  useLayoutEffect(() => {
+    if (!bodyRef.current) {
+      return;
+    }
+
+    setMeasuredHeight(bodyRef.current.scrollHeight);
+  }, [children]);
+
+  useEffect(() => {
+    const expandTimerId = window.setTimeout(() => {
+      setIsExpanded(true);
+    }, 20);
+    const enterTimerId = window.setTimeout(() => {
+      setIsEntered(true);
+    }, 240);
+    const contentTimerId = window.setTimeout(() => {
+      setIsContentVisible(true);
+    }, 380);
+
+    return () => {
+      window.clearTimeout(expandTimerId);
+      window.clearTimeout(enterTimerId);
+      window.clearTimeout(contentTimerId);
+    };
+  }, []);
+
+  return (
+    <div
+      className={`trace-bubble-wrap ${isExpanded ? 'trace-bubble-wrap-open' : 'trace-bubble-wrap-closed'}`}
+      style={{ maxHeight: isExpanded ? `${Math.max(measuredHeight + 12, 72)}px` : '0px' }}
+    >
+      <div
+        ref={bodyRef}
+        className={`${className} ${isEntered ? 'trace-message-entered' : 'trace-message-entering'} ${
+          isContentVisible ? 'trace-message-content-visible' : 'trace-message-content-hidden'
+        }`}
+      >
+        {children}
+      </div>
+    </div>
+  );
+};
+
+const AgentActivity = ({ activity, handoffs, isVisible, isRunning, selectedJob, onClear }) => {
   const traceContainerRef = useRef(null);
+  const scrollTimerRef = useRef(null);
   const trace = Array.isArray(handoffs) ? handoffs : [];
   const jobActivity = Array.isArray(activity)
     ? activity.filter((item) => !selectedJob || item.entity_id === selectedJob)
     : [];
   const systemEvents = jobActivity.filter((item) => item.event_kind !== 'handoff');
+  const pendingActor = getPendingTraceActor(trace);
+  const pendingActorStyle = AGENT_STYLES[pendingActor.agent] || {
+    accent: 'border-slate-300 bg-slate-50 text-slate-900',
+    pill: 'bg-slate-100 text-slate-800 border-slate-200',
+  };
+  const shouldShowLiveTyping = Boolean(selectedJob) && isRunning;
 
   useEffect(() => {
-    if (!traceContainerRef.current) {
+    return () => {
+      if (scrollTimerRef.current) {
+        window.clearTimeout(scrollTimerRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isVisible || !traceContainerRef.current) {
       return;
     }
 
-    traceContainerRef.current.scrollTop = traceContainerRef.current.scrollHeight;
-  }, [trace.length, selectedJob]);
+    const container = traceContainerRef.current;
+    const scrollToBottom = () => {
+      container.scrollTo({
+        top: container.scrollHeight,
+        behavior: 'smooth',
+      });
+    };
+
+    scrollToBottom();
+    window.requestAnimationFrame(scrollToBottom);
+
+    if (scrollTimerRef.current) {
+      window.clearTimeout(scrollTimerRef.current);
+    }
+
+    scrollTimerRef.current = window.setTimeout(scrollToBottom, 420);
+  }, [isVisible, selectedJob, trace.length, shouldShowLiveTyping]);
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-slate-900">Agent Handoff Trace</h2>
+          <h2 className="text-2xl font-bold text-slate-900">Coordinator Orchestration Trace</h2>
           <p className="mt-1 text-sm text-slate-600">
             {selectedJob
-              ? `Coordinator-mediated conversation for job ${selectedJob}`
-              : 'Select a job to inspect how the coordinator routes work between agents'}
+              ? `How the coordinator planned and managed workflow execution for job ${selectedJob}`
+              : 'Select a job to inspect how the coordinator planned the workflow and delegated work to agents'}
           </p>
         </div>
         {systemEvents.length > 0 && (
@@ -107,48 +217,55 @@ const AgentActivity = ({ activity, handoffs, loading, selectedJob, onClear }) =>
             <AlertCircle className="mx-auto mb-4 h-16 w-16 text-slate-300" />
             <h3 className="mb-2 text-lg font-semibold text-slate-900">No job selected</h3>
             <p className="text-slate-600">
-              Choose a job from the dashboard or candidates view to inspect the handoff conversation.
+              Choose a job from the dashboard or candidates view to inspect the coordinator trace.
             </p>
           </div>
-        ) : loading ? (
-          <div className="py-12 text-center text-slate-600">
-            Loading handoff trace for {selectedJob}...
-          </div>
-        ) : trace.length === 0 ? (
+        ) : trace.length === 0 && !shouldShowLiveTyping ? (
           <div className="py-12 text-center">
             <AlertCircle className="mx-auto mb-4 h-16 w-16 text-slate-300" />
             <h3 className="mb-2 text-lg font-semibold text-slate-900">No trace yet</h3>
             <p className="text-slate-600">
-              Handoffs will appear here once the selected job starts moving through the workflow.
+              Live coordinator handoffs will appear here once the selected job starts moving through the workflow.
             </p>
           </div>
         ) : (
           <div
             ref={traceContainerRef}
-            className="max-h-[70vh] space-y-4 overflow-y-auto rounded-2xl bg-slate-50 p-4"
+            className={`trace-shell max-h-[70vh] space-y-4 overflow-y-auto rounded-2xl bg-slate-50 p-4 ${
+              isVisible ? 'trace-shell-live' : ''
+            }`}
           >
-            {trace.map((item) => {
+            {trace.map((item, index) => {
               const speaker = item.from_agent;
               const speakerStyle = AGENT_STYLES[speaker] || {
                 accent: 'border-slate-300 bg-slate-50 text-slate-900',
                 pill: 'bg-slate-100 text-slate-800 border-slate-200',
               };
               const previewEntries = Object.entries(item.payload_preview || {}).slice(0, 4);
+              const isRightAligned = isRightAlignedAgent(speaker);
 
               return (
                 <div
-                  key={item.event_id || `${item.timestamp}-${item.direction}-${item.stage}`}
-                  className={`flex ${item.direction === 'request' ? 'justify-start' : 'justify-end'}`}
+                  key={getTraceEventKey(item, index)}
+                  className={`trace-row flex ${isRightAligned ? 'justify-end' : 'justify-start'}`}
                 >
-                  <div className={`w-full max-w-3xl rounded-2xl border p-5 shadow-sm ${speakerStyle.accent}`}>
+                  <TraceBubble
+                    className={`trace-message max-w-[78%] min-w-[18rem] rounded-2xl border p-5 shadow-sm ${speakerStyle.accent} ${
+                      isRightAligned ? 'trace-message-response' : 'trace-message-request'
+                    }`}
+                  >
                     <div className="flex flex-wrap items-center gap-2">
                       <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${speakerStyle.pill}`}>
                         {formatAgentName(item.from_agent)}
                       </span>
-                      <span className="text-sm text-slate-500">to</span>
-                      <span className="inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
-                        {formatAgentName(item.to_agent)}
-                      </span>
+                      {item.to_agent && item.to_agent !== item.from_agent && (
+                        <>
+                          <span className="text-sm text-slate-500">to</span>
+                          <span className="inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
+                            {formatAgentName(item.to_agent)}
+                          </span>
+                        </>
+                      )}
                       <span className="ml-auto text-xs text-slate-500">
                         {formatDateTime(item.timestamp)}
                       </span>
@@ -194,10 +311,32 @@ const AgentActivity = ({ activity, handoffs, loading, selectedJob, onClear }) =>
                         </span>
                       )}
                     </div>
-                  </div>
+                  </TraceBubble>
                 </div>
               );
             })}
+
+            {shouldShowLiveTyping && (
+              <div className={`trace-row flex ${isRightAlignedAgent(pendingActor.agent) ? 'justify-end' : 'justify-start'}`}>
+                <TraceBubble
+                  className={`trace-message trace-message-typing max-w-[24rem] min-w-[16rem] rounded-2xl border px-4 py-3 shadow-sm ${pendingActorStyle.accent} ${
+                    isRightAlignedAgent(pendingActor.agent) ? 'trace-message-response' : 'trace-message-request'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${pendingActorStyle.pill}`}>
+                      {formatAgentName(pendingActor.agent)}
+                    </span>
+                    <span className="trace-typing-dots" aria-hidden="true">
+                      <span />
+                      <span />
+                      <span />
+                    </span>
+                  </div>
+                  <p className="mt-3 text-sm leading-6">{pendingActor.message}</p>
+                </TraceBubble>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -207,7 +346,7 @@ const AgentActivity = ({ activity, handoffs, loading, selectedJob, onClear }) =>
           <div>
             <h3 className="text-lg font-bold text-slate-900">Live System Events</h3>
             <p className="mt-1 text-sm text-slate-600">
-              Status updates for the selected job that sit outside the chat-style handoff trace
+              Status updates for the selected job that sit outside the coordinator-led orchestration trace
             </p>
           </div>
           <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">

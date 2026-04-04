@@ -6,8 +6,14 @@ import unittest
 from unittest.mock import patch
 
 from app.agent import ScreeningAgent
+from app.config import QUALIFICATION_THRESHOLD
 from app.shared_memory import SharedMemory
-from app.worker import heuristic_screen_candidate, coerce_screening_result, screen_with_skill_assessment
+from app.worker import (
+    heuristic_screen_candidate,
+    coerce_screening_result,
+    screen_with_skill_assessment,
+    evaluate_experience_alignment,
+)
 
 
 class ScreeningAgentTests(unittest.TestCase):
@@ -155,6 +161,37 @@ class ScreeningAgentTests(unittest.TestCase):
         self.assertEqual(result["payload"]["matched_skills"], ["python"])
         self.assertIn("fastapi", result["payload"]["missing_skills"])
         self.assertTrue(result["payload"]["meets_threshold"])
+        self.assertEqual(result["confidence"], 0.82)
+        self.assertFalse(result["payload"]["needs_human_review"])
+
+    def test_flags_overqualified_candidate_for_junior_role(self):
+        agent = ScreeningAgent(agent_type="screening", shared_memory=SharedMemory())
+
+        result = agent.handle(
+            {
+                "parsed_resume": {"skills": ["python", "fastapi", "sql"], "years_experience": 8},
+                "job_description": "Junior backend engineer role for a junior python fastapi developer",
+                "job_requirements": {
+                    "required_skills": ["python", "fastapi"],
+                    "preferred_skills": ["sql"],
+                    "min_years_experience": 2,
+                },
+                "skill_assessment": {
+                    "skills_score": 0.95,
+                    "matched_required_skills": ["python", "fastapi"],
+                    "missing_required_skills": [],
+                    "matched_preferred_skills": ["sql"],
+                    "missing_preferred_skills": [],
+                    "confidence": 0.9,
+                },
+            }
+        )
+
+        self.assertFalse(result["payload"]["meets_threshold"])
+        self.assertEqual(result["payload"]["decision"], "FAIL")
+        self.assertTrue(result["payload"]["needs_human_review"])
+        self.assertTrue(result["payload"]["details"]["overqualification_flag"])
+        self.assertIn("overqualified", result["payload"]["review_reasons"][-1])
 
 
 class HeuristicTests(unittest.TestCase):
@@ -227,6 +264,17 @@ class HeuristicTests(unittest.TestCase):
         self.assertTrue(result["meets_threshold"])
         self.assertEqual(result["matched_skills"], ["python", "fastapi", "docker"])
         self.assertIn("sql", result["missing_skills"])
+
+    def test_evaluate_experience_alignment_detects_junior_role_mismatch(self):
+        result = evaluate_experience_alignment(
+            years_experience=8,
+            job_description="Junior backend engineer focused on Python APIs",
+            job_requirements={"min_years_experience": 2},
+        )
+
+        self.assertTrue(result["junior_role"])
+        self.assertTrue(result["severe_overqualification"])
+        self.assertLess(result["max_allowed_score"], QUALIFICATION_THRESHOLD)
 
 
 class CoerceResultTests(unittest.TestCase):

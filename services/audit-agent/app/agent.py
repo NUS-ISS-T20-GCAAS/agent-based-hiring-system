@@ -1,6 +1,6 @@
 from app.base_agent import BaseAgent
 from app.llm import AuditLLM
-from app.worker import coerce_audit_result, heuristic_audit_check
+from app.worker import heuristic_audit_check, normalize_audit_result
 
 
 class AuditAgent(BaseAgent):
@@ -13,25 +13,37 @@ class AuditAgent(BaseAgent):
 
     def handle(self, input_data):
         method_used = "llm"
+        stats = input_data.get("stats") or {}
+        candidates = input_data.get("candidates") or []
+        decisions = input_data.get("decisions") or []
+        job_id = input_data.get("job_id")
+        orchestration_plan = input_data.get("orchestration_plan") or {}
 
         try:
-            llm_result = self.llm.audit(
-                job_id=input_data.get("job_id"),
-                stats=input_data.get("stats") or {},
-                candidates=input_data.get("candidates") or [],
-                decisions=input_data.get("decisions") or [],
+            raw_result = self.llm.audit(
+                job_id=job_id,
+                stats=stats,
+                candidates=candidates,
+                decisions=decisions,
+                orchestration_plan=orchestration_plan,
             )
-            result = coerce_audit_result(llm_result)
         except Exception as exc:
             method_used = "heuristic"
             self.logger.error("audit_llm_fallback", error=str(exc))
-            result = heuristic_audit_check(
-                job_id=input_data.get("job_id"),
-                stats=input_data.get("stats") or {},
-                candidates=input_data.get("candidates") or [],
-                decisions=input_data.get("decisions") or [],
+            raw_result = heuristic_audit_check(
+                job_id=job_id,
+                stats=stats,
+                candidates=candidates,
+                decisions=decisions,
             )
 
+        result = normalize_audit_result(
+            result=raw_result,
+            job_id=job_id,
+            stats=stats,
+            candidates=candidates,
+            decisions=decisions,
+        )
         explanation = self._build_explanation(result, method_used)
 
         return {
@@ -56,7 +68,11 @@ class AuditAgent(BaseAgent):
     def _build_explanation(self, result: dict, method_used: str) -> str:
         flags = ", ".join(result["bias_flags"]) if result["bias_flags"] else "none"
         recommendations = "; ".join(result["recommendations"][:2]) if result["recommendations"] else "no immediate action"
-        review_note = "Human review is required." if result["review_required"] else "No human review is required."
+        review_note = (
+            "Manual audit review is required."
+            if result["review_required"]
+            else "No manual audit review is required."
+        )
         return (
             f"Audit completed using {method_used} analysis. "
             f"Risk level is {result['risk_level']} with a selection rate of {result['selection_rate']:.1%} "

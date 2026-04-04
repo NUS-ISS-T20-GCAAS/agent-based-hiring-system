@@ -1,6 +1,7 @@
 import asyncio
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from app.coordinator import coordinator_llm
 from app.repository import CoordinatorRepository
 from app.routes import router
 from app.events import event_hub, utc_now_iso
@@ -30,6 +31,7 @@ def health():
             "running": workflow_queue_worker.is_running(),
             "poll_interval_seconds": workflow_queue_worker.poll_interval_seconds,
         },
+        "llm_enabled": coordinator_llm.enabled,
     }
     try:
         health_payload["workflow_queue"] = CoordinatorRepository().get_workflow_queue_counts()
