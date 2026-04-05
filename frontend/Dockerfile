@@ -20,6 +20,8 @@ RUN npm config set registry "${NPM_REGISTRY}" \
  && npm ci --fetch-retries=5 --fetch-retry-mintimeout=20000 --fetch-retry-maxtimeout=120000
 
 COPY . .
+ARG VITE_WS_URL
+ENV VITE_WS_URL=${VITE_WS_URL}
 RUN npm run build
 
 
