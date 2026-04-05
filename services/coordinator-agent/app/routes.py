@@ -474,6 +474,8 @@ async def _process_upload_files(
     job_id: str,
     files: list[UploadFile],
 ) -> dict:
+    from app.tasks import run_workflow_task
+
     job = _job_or_404(repository, job_id)
     job_description = job.get("job_description") or ""
     job_requirements = _normalize_job_requirements(job.get("job_requirements"))
@@ -494,23 +496,23 @@ async def _process_upload_files(
                 job_requirements=job_requirements,
             )
             try:
-                queue_id = repository.enqueue_workflow_job(
-                    job_id=job_id,
-                    filename=filename,
-                    request=request,
+                result = run_workflow_task.delay(
+                    request.model_dump(),
+                    filename,
                 )
+                task_id = result.id
                 repository.mark_job_processing(job_id=job_id)
             except Exception as exc:
                 logger.error(
-                    "workflow_enqueue_failed",
+                    "celery_dispatch_failed",
                     entity_id=job_id,
                     filename=filename,
                     error=str(exc),
                 )
-                raise HTTPException(status_code=503, detail="workflow queue unavailable")
+                raise HTTPException(status_code=503, detail="task queue unavailable")
             emit_agent_activity(
                 agent="coordinator",
-                message=f"Queued upload workflow for {filename}",
+                message=f"Dispatched workflow task for {filename}",
                 entity_id=job_id,
             )
             results.append(
@@ -518,7 +520,7 @@ async def _process_upload_files(
                     "file": filename,
                     "status": "queued",
                     "job_id": job_id,
-                    "queue_id": queue_id,
+                    "task_id": task_id,
                     "resume_url": request.resume_url,
                 }
             )

@@ -141,6 +141,12 @@ jobs:
           # router can find the configmap and enable CloudWatch log shipping.
           kubectl apply -f ${{ env.TF_DIR }}/k8s/aws-logging.yaml
 
+      - name: Deploy Redis
+        run: |
+          kubectl apply -f ${{ env.TF_DIR }}/k8s/redis-deployment.yaml
+          echo "Waiting for Redis rollout..."
+          kubectl rollout status deployment/redis -n services --timeout=120s
+
       - name: Replace Placeholders and Apply to Kubernetes
         run: |
           ACCOUNT_ID="${{ steps.tf-outputs.outputs.account_id }}"
@@ -164,6 +170,20 @@ jobs:
               echo "Warning: No K8s manifest found for ${SERVICE}"
             fi
           done
+
+      - name: Deploy Celery Worker
+        run: |
+          ACCOUNT_ID="${{ steps.tf-outputs.outputs.account_id }}"
+          REGION="${{ env.AWS_REGION }}"
+          FILE="${{ env.TF_DIR }}/k8s/celery-worker-deployment.yaml"
+
+          sed -i "s/<ACCOUNT_ID>/$ACCOUNT_ID/g" "$FILE"
+          sed -i "s/<REGION>/$REGION/g" "$FILE"
+          sed -i "s/<IMAGE_TAG>/${IMAGE_TAG}/g" "$FILE"
+
+          kubectl apply -f "$FILE"
+          echo "Waiting for celery-worker rollout..."
+          kubectl rollout status deployment/celery-worker -n services --timeout=300s
           
       - name: Verify Rollout Status
         run: |

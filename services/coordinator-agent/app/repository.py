@@ -5,7 +5,7 @@ from typing import Any
 from psycopg2.extras import Json, RealDictCursor
 
 from app.db import transaction
-from app.schemas import Artifact, JobRequest
+from app.schemas import Artifact
 
 
 class CoordinatorRepository:
@@ -165,31 +165,6 @@ class CoordinatorRepository:
                     ),
                 )
 
-    def enqueue_workflow_job(
-        self,
-        *,
-        job_id: str,
-        filename: str,
-        request: JobRequest,
-    ) -> str:
-        with transaction() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    INSERT INTO workflow_queue (
-                        job_id,
-                        filename,
-                        request_payload,
-                        status
-                    )
-                    VALUES (%s, %s, %s::jsonb, 'PENDING')
-                    RETURNING queue_id::text
-                    """,
-                    (job_id, filename, Json(request.model_dump())),
-                )
-                queue_id = cur.fetchone()[0]
-                return str(queue_id)
-
     def mark_job_processing(self, *, job_id: str) -> None:
         with transaction() as conn:
             with conn.cursor() as cur:
@@ -201,90 +176,6 @@ class CoordinatorRepository:
                     """,
                     (job_id,),
                 )
-
-    def claim_next_workflow_job(self) -> dict[str, Any] | None:
-        with transaction() as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute(
-                    """
-                    WITH next_job AS (
-                        SELECT queue_id
-                        FROM workflow_queue
-                        WHERE status = 'PENDING'
-                        ORDER BY created_at ASC
-                        FOR UPDATE SKIP LOCKED
-                        LIMIT 1
-                    )
-                    UPDATE workflow_queue AS q
-                    SET
-                        status = 'RUNNING',
-                        attempt_count = q.attempt_count + 1,
-                        started_at = NOW(),
-                        last_error = NULL
-                    FROM next_job
-                    WHERE q.queue_id = next_job.queue_id
-                    RETURNING
-                        q.queue_id::text AS queue_id,
-                        q.job_id,
-                        q.filename,
-                        q.request_payload,
-                        q.attempt_count,
-                        q.created_at,
-                        q.started_at
-                    """
-                )
-                row = cur.fetchone()
-                return dict(row) if row else None
-
-    def mark_workflow_job_completed(self, *, queue_id: str) -> None:
-        with transaction() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    UPDATE workflow_queue
-                    SET
-                        status = 'COMPLETED',
-                        finished_at = NOW()
-                    WHERE queue_id = %s::uuid
-                    """,
-                    (queue_id,),
-                )
-
-    def mark_workflow_job_failed(self, *, queue_id: str, error: str) -> None:
-        with transaction() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    UPDATE workflow_queue
-                    SET
-                        status = 'FAILED',
-                        last_error = %s,
-                        finished_at = NOW()
-                    WHERE queue_id = %s::uuid
-                    """,
-                    (error, queue_id),
-                )
-
-    def get_workflow_queue_counts(self) -> dict[str, int]:
-        with transaction() as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute(
-                    """
-                    SELECT
-                        COUNT(*) FILTER (WHERE status = 'PENDING')::int AS pending,
-                        COUNT(*) FILTER (WHERE status = 'RUNNING')::int AS running,
-                        COUNT(*) FILTER (WHERE status = 'FAILED')::int AS failed,
-                        COUNT(*) FILTER (WHERE status = 'COMPLETED')::int AS completed
-                    FROM workflow_queue
-                    """
-                )
-                row = cur.fetchone()
-                return dict(row) if row else {
-                    "pending": 0,
-                    "running": 0,
-                    "failed": 0,
-                    "completed": 0,
-                }
 
     def mark_workflow_failed(
         self,

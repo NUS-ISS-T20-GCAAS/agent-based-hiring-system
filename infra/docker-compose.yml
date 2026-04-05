@@ -12,6 +12,18 @@ services:
     networks:
       - app-net  
 
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - app-net
+
   coordinator-agent:
     build:
       context: ../services/coordinator-agent
@@ -23,12 +35,19 @@ services:
       - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o-mini}
       - AUDIT_AGENT_URL=http://audit-agent:8000
       - SKILL_ASSESSMENT_AGENT_URL=http://skill-assessment-agent:8000
+      - RESUME_INTAKE_AGENT_URL=http://resume-intake-agent:8000
+      - SCREENING_AGENT_URL=http://screening-agent:8000
+      - RANKING_AGENT_URL=http://ranking-agent:8000
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - DB_HOST=postgres
       - DB_PORT=5432
       - DB_NAME=hiring_system
       - DB_USER=user
       - DB_PASSWORD=password
     depends_on:
+      redis:
+        condition: service_healthy
       db-migrate:
         condition: service_completed_successfully
       resume-intake-agent:
@@ -40,7 +59,43 @@ services:
       audit-agent:
         condition: service_healthy
     networks:
-      - app-net  
+      - app-net
+
+  celery-worker:
+    build:
+      context: ../services/coordinator-agent
+      dockerfile: Dockerfile
+    command: celery -A app.celery_app:celery worker --loglevel=info --queues=workflow --concurrency=4
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o-mini}
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - RESUME_INTAKE_AGENT_URL=http://resume-intake-agent:8000
+      - SKILL_ASSESSMENT_AGENT_URL=http://skill-assessment-agent:8000
+      - SCREENING_AGENT_URL=http://screening-agent:8000
+      - RANKING_AGENT_URL=http://ranking-agent:8000
+      - AUDIT_AGENT_URL=http://audit-agent:8000
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=hiring_system
+      - DB_USER=user
+      - DB_PASSWORD=password
+    depends_on:
+      redis:
+        condition: service_healthy
+      db-migrate:
+        condition: service_completed_successfully
+      resume-intake-agent:
+        condition: service_healthy
+      skill-assessment-agent:
+        condition: service_healthy
+      screening-agent:
+        condition: service_healthy
+      audit-agent:
+        condition: service_healthy
+    networks:
+      - app-net
 
   resume-intake-agent:
     build:

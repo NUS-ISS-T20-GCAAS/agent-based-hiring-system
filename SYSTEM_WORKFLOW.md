@@ -7,8 +7,8 @@ This document describes the workflow implemented in the current codebase.
 The main persisted workflow has two entry modes:
 
 1. `POST /jobs` runs a single candidate workflow immediately.
-2. `POST /candidates/upload` and `POST /candidates/batch-upload` parse resume files, enqueue workflow jobs in Postgres, and return `202 Accepted`.
-3. The coordinator worker claims queued jobs, upserts the job, creates the candidate, and starts a workflow run.
+2. `POST /candidates/upload` and `POST /candidates/batch-upload` parse resume files, dispatch Celery tasks via Redis, and return `202 Accepted`.
+3. A Celery worker (separate container) picks up tasks from Redis, upserts the job, creates the candidate, and starts a workflow run.
 4. The coordinator sends resume data to the Resume Intake Agent.
 5. The Resume Intake Agent returns a structured candidate profile artifact.
 6. The coordinator sends the parsed profile plus job context to the Skill Assessment Agent.
@@ -29,20 +29,22 @@ The Ranking Agent is separate from this default flow. It is invoked manually thr
 flowchart TD
     A["Recruiter / User"] --> B["Frontend"]
     B --> C["Coordinator API"]
-    C --> D["Postgres<br/>jobs, candidates, workflow_runs, workflow_queue"]
-    C --> E["Resume Intake Agent"]
+    C --> R["Redis<br/>Celery Broker"]
+    R --> W["Celery Worker<br/>(same image, different entrypoint)"]
+    W --> E["Resume Intake Agent"]
     E --> F["resume_intake_result artifact"]
-    F --> C
-    C --> G["Skill Assessment Agent"]
+    F --> W
+    W --> G["Skill Assessment Agent"]
     G --> H["skill_assessment_result artifact"]
-    H --> C
-    C --> I["Screening Agent"]
+    H --> W
+    W --> I["Screening Agent"]
     I --> J["qualification_screening_result artifact"]
-    J --> C
-    C --> K["Audit Agent"]
+    J --> W
+    W --> K["Audit Agent"]
     K --> L["audit_bias_check_result artifact"]
-    L --> C
-    C --> M["Postgres<br/>artifacts + candidate state"]
+    L --> W
+    W --> M["Postgres<br/>jobs, candidates, artifacts, workflow_runs"]
+    C --> M
     C --> N["Read APIs"]
     N --> B
     C -. manual .-> O["Ranking Agent"]
@@ -266,7 +268,6 @@ The main persisted tables are:
 - `candidates`
 - `workflow_runs`
 - `artifacts`
-- `workflow_queue`
 
 Relevant schema additions in the current migration set:
 
@@ -278,7 +279,6 @@ Relevant schema additions in the current migration set:
 - `candidates.rank_position`
 - `candidates.ranking_score`
 - `candidates.ranking_method`
-- `workflow_queue`
 
 ## 6. Frontend Reality Check
 

@@ -17,3 +17,6 @@ DB_PORT = int(os.getenv("DB_PORT", "5432"))
 DB_NAME = os.getenv("DB_NAME", "hiring_system")
 DB_USER = os.getenv("DB_USER", "user")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "password")
+
+CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://redis:6379/0")
+CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0")

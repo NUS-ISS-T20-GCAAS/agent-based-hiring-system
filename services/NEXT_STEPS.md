@@ -32,7 +32,7 @@ Already working:
 Current gaps:
 
 - ranking is manual-only and should remain a separate layer from screening/audit decisions
-- uploads now enqueue into a Postgres-backed worker, but there is not yet a separate multi-process queue stack such as Redis/Celery
+- uploads now dispatch to a Celery + Redis task queue for background processing
 - heuristic extraction and explanations still have room to improve
 - the skill-assessment service now supports model-backed execution, but its competency analysis and explanations can still be improved
 
@@ -43,8 +43,8 @@ Recommended shortlist, ranked by expected project value:
 1. `langgraph`
    Best fit for showing real multi-agent orchestration, stateful workflows, checkpoints, and human-in-the-loop design.
 
-2. `redis` + `celery`
-   Best fit for scaling beyond the current in-process Postgres-backed worker with more explicit background job orchestration and retry controls.
+2. `redis` + `celery` ✅ **Implemented**
+   Background job orchestration is now handled by Celery tasks dispatched through Redis. The Celery worker runs as a separate container using the same coordinator image.
 
 3. `langfuse`
    Best fit for demo and report visibility through tracing, prompt/version tracking, and LLM observability.
@@ -68,7 +68,7 @@ Best packages to prioritize:
 
 - easiest practical win: `instructor`
 - most impressive for demo/story: `langgraph`
-- best architectural fix for the current system: `redis` + `celery`
+- best architectural fix for the current system: `redis` + `celery` ✅
 - best visibility and evaluation add-on: `langfuse`
 
 ## Recommended Order
@@ -110,21 +110,14 @@ Acceptance criteria:
 - extracted candidate profiles look more complete in fallback mode
 - explanations are easier to read in list/detail views
 
-### 3. Bigger Queue Upgrade
+### 3. ~~Bigger Queue Upgrade~~ ✅ Completed
 
-Why third:
+Implemented with Celery + Redis. The Celery worker runs as a separate container with `--concurrency=4`, dispatched via Redis broker. The old Postgres `workflow_queue` table has been dropped.
 
-- The current Postgres-backed worker is good for demo durability, but not the final scaling story.
+Acceptance criteria (met):
 
-Implementation targets:
-
-- queue infrastructure package choice
-- coordinator worker deployment model
-- retry/dead-letter strategy
-
-Acceptance criteria:
-
-- queue processing can survive coordinator restarts and scale beyond one in-process worker
+- queue processing survives coordinator restarts (separate worker container)
+- scales beyond one in-process worker (Celery concurrency + HPA)
 
 ## Good Next Work After Demo-Critical Items
 
