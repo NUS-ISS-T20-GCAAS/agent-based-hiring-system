@@ -44,8 +44,14 @@ infra/terraform/
 ## Architecture
 
 ```mermaid
-graph TB
+graph LR
+    subgraph Provisioning["Infrastructure Provisioning"]
+        TF["Terraform<br/>(GitHub Actions)"] --> S3[("Amazon S3<br/>(tfstate)")]
+        TF --> DDB[("DynamoDB<br/>(State Lock)")]
+    end
+
     Internet((Internet))
+    ECR["ECR<br/>(7 repositories)"]
 
     subgraph VPC["VPC — 10.0.0.0/16"]
         subgraph PubSub["Public Subnets (10.0.1.0/24, 10.0.2.0/24)"]
@@ -56,7 +62,7 @@ graph TB
 
         subgraph PrivSub["Private Subnets (10.0.10.0/24, 10.0.11.0/24)"]
             subgraph EKS["EKS Cluster — Kubernetes 1.32"]
-                subgraph NodeGroup["Managed Node Group (t3.small)"]
+                subgraph NodeGroup["Managed Node Group"]
                     FE["frontend<br/>namespace<br/>(2 replicas)"]
                 end
                 subgraph Fargate["Fargate — Serverless"]
@@ -68,19 +74,23 @@ graph TB
                     SKILL["skill-assessment-agent"]
                 end
             end
-            RDS[("RDS PostgreSQL 15<br/>db.t3.micro<br/>Encrypted")]
+            RDS[("RDS PostgreSQL 15")]
         end
     end
 
-    ECR["ECR<br/>(7 repositories)"]
+    TF -.-> VPC
+    TF -.-> ECR
 
     Internet --> IGW --> ALB --> FE
+    FE --> COORD
+    
     COORD --> RDS
     COORD <--> RESUME
     COORD <--> SCREEN
     COORD <--> AUDIT
     COORD <--> RANKING
     COORD <--> SKILL
+    
     PrivSub --> NAT --> IGW
     EKS -.-> ECR
 ```
