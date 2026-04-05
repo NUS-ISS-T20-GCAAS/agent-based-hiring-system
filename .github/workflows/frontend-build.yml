@@ -7,6 +7,11 @@ on:
         description: "Image tag to build and push to GHCR"
         required: true
         type: string
+      vite_ws_url:
+        description: "WebSocket URL mapped to the Nginx backend (e.g. wss://domain.com/api/ws)"
+        required: false
+        type: string
+        default: ""
 
 jobs:
   build:
@@ -31,6 +36,7 @@ jobs:
       - name: Build Docker Image
         run: |
           docker build \
+            --build-arg VITE_WS_URL="${{ inputs.vite_ws_url }}" \
             -t ghcr.io/${{ env.REPO_LOWER }}/frontend:${{ inputs.image_tag }} \
             frontend
 
