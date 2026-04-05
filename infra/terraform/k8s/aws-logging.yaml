@@ -8,16 +8,6 @@
 #
 # This single ConfigMap applies to ALL Fargate pods across ALL namespaces.
 #
-# Each service gets its own CloudWatch log group using log_group_template,
-# which resolves the pod's Kubernetes "app" label at runtime:
-#
-#   coordinator-agent      → /aws/eks/hiring-system/fargate/coordinator-agent
-#   screening-agent        → /aws/eks/hiring-system/fargate/screening-agent
-#   resume-intake-agent    → /aws/eks/hiring-system/fargate/resume-intake-agent
-#   audit-agent            → /aws/eks/hiring-system/fargate/audit-agent
-#   ranking-agent          → /aws/eks/hiring-system/fargate/ranking-agent
-#   skill-assessment-agent → /aws/eks/hiring-system/fargate/skill-assessment-agent
-#
 # Ref: https://docs.aws.amazon.com/eks/latest/userguide/fargate-logging.html
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -37,31 +27,11 @@ metadata:
   namespace: aws-observability
 data:
   flb_log_cw: "true"
-  filters.conf: |
-    [FILTER]
-        Name parser
-        Match *
-        Key_name log
-        Parser crio
-    [FILTER]
-        Name kubernetes
-        Match kube.*
-        Merge_Log On
-        Keep_Log Off
-        Buffer_Size 0
-        Kube_Meta_Cache_TTL 300s
   output.conf: |
     [OUTPUT]
         Name              cloudwatch_logs
-        Match             kube.*
+        Match             *
         region            ap-southeast-1
-        log_group_template /aws/eks/hiring-system/fargate/$kubernetes['labels']['app']
-        log_stream_prefix pod/
+        log_group_name    /aws/eks/hiring-system-dev/fargate/services
+        log_stream_prefix fargate-
         auto_create_group true
-  parsers.conf: |
-    [PARSER]
-        Name crio
-        Format Regex
-        Regex ^(?<time>[^ ]+) (?<stream>stdout|stderr) (?<logtag>P|F) (?<log>.*)$
-        Time_Key    time
-        Time_Format %Y-%m-%dT%H:%M:%S.%L%z
