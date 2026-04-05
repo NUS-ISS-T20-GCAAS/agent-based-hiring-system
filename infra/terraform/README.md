@@ -27,6 +27,8 @@ infra/terraform/
     ├── audit-agent-deployment.yaml          # Fargate, HPA 1→5
     ├── ranking-agent-deployment.yaml        # Fargate, HPA 1→5
     ├── skill-assessment-agent-deployment.yaml # Fargate, HPA 1→5
+    ├── redis-deployment.yaml                # In-cluster Redis (Celery broker)
+    ├── celery-worker-deployment.yaml        # Celery worker, HPA 1→3 (same coordinator image)
     └── secrets.yaml.example                 # Template for credentials
 
 .github/workflows/
@@ -67,6 +69,8 @@ graph LR
                 end
                 subgraph Fargate["Fargate — Serverless"]
                     COORD["coordinator-agent"]
+                    WORKER["celery-worker<br/>(1-3 replicas)"]
+                    REDIS["redis<br/>(Celery broker)"]
                     RESUME["resume-intake-agent"]
                     SCREEN["screening-agent"]
                     AUDIT["audit-agent"]
@@ -84,12 +88,15 @@ graph LR
     Internet --> IGW --> ALB --> FE
     FE --> COORD
     
+    COORD --> REDIS
+    REDIS --> WORKER
     COORD --> RDS
-    COORD <--> RESUME
-    COORD <--> SCREEN
-    COORD <--> AUDIT
+    WORKER --> RDS
+    WORKER <--> RESUME
+    WORKER <--> SCREEN
+    WORKER <--> AUDIT
+    WORKER <--> SKILL
     COORD <--> RANKING
-    COORD <--> SKILL
     
     PrivSub --> NAT --> IGW
     EKS -.-> ECR
@@ -100,7 +107,9 @@ graph LR
 | **VPC** | `10.0.0.0/16`, 2 AZs (`ap-southeast-1a`, `1b`), single NAT (cost-optimized) |
 | **EKS** | K8s 1.32, public+private endpoint, API/audit/authenticator logging. Root & all IAM users granted ClusterAdmin via Access Entries. |
 | **Node Group** | `t3.small`, 1–4 nodes (managed node group), hosts the `frontend` namespace. |
-| **Fargate** | `services` namespace — coordinator, resume-intake, screening, skill-assessment, audit, and ranking agents |
+| **Fargate** | `services` namespace — coordinator, celery-worker, redis, resume-intake, screening, skill-assessment, audit, and ranking agents |
+| **Redis** | In-cluster `redis:7-alpine` pod (Celery broker), 256Mi memory, AOF persistence. ~$3–5/mo on Fargate. |
+| **Celery Worker** | Same `coordinator-agent` image, different entrypoint. HPA 1→3 replicas, `--concurrency=4`. |
 | **RDS** | PostgreSQL 15, gp2 storage (20 GB), 0-day backups (Free Tier) |
 | **ECR** | 7 repos, immutable tags, scan-on-push, 10-image lifecycle cleanup |
 | **Security** | Node security groups configured with NodePort ingress (30000-32767) for ELB health checks. |
@@ -328,9 +337,13 @@ cp k8s/secrets.yaml.example k8s/secrets.yaml
 # Edit secrets.yaml with base64-encoded credentials
 kubectl apply -f k8s/secrets.yaml
 
+# Redis (Celery broker — deploy before coordinator and worker)
+kubectl apply -f k8s/redis-deployment.yaml
+
 # Deployments + Services + HPAs
 kubectl apply -f k8s/frontend-deployment.yaml
 kubectl apply -f k8s/coordinator-agent-deployment.yaml
+kubectl apply -f k8s/celery-worker-deployment.yaml
 kubectl apply -f k8s/resume-intake-agent-deployment.yaml
 kubectl apply -f k8s/screening-agent-deployment.yaml
 kubectl apply -f k8s/skill-assessment-agent-deployment.yaml
@@ -428,7 +441,7 @@ A specialized, integrated workflow designed to reduce dev environment costs by d
 
 ## Current Workflow Note
 
-- `deploy-services.yml` now dynamically builds and deploys successful services: `coordinator-agent`, `resume-intake-agent`, `screening-agent`, `skill-assessment-agent`, `ranking-agent`, and `audit-agent`.
+- `deploy-services.yml` now dynamically builds and deploys successful services: `coordinator-agent`, `resume-intake-agent`, `screening-agent`, `skill-assessment-agent`, `ranking-agent`, and `audit-agent`. It also deploys `redis` and `celery-worker` (which shares the coordinator image).
 - When adding new services, ensure both `terraform.yml` and `terraform-manage.yml` are also updated to capture and re-apply image tags.
 
 ---
