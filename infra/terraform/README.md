@@ -24,7 +24,6 @@ infra/terraform/
     ├── coordinator-agent-deployment.yaml    # Fargate, HPA 1→5
     ├── resume-intake-agent-deployment.yaml  # Fargate, HPA 1→5
     ├── screening-agent-deployment.yaml      # Fargate, HPA 1→5
-    ├── skill-assessment-agent-deployment.yaml # Fargate, HPA 1→5
     ├── audit-agent-deployment.yaml          # Fargate, HPA 1→5
     ├── ranking-agent-deployment.yaml        # Fargate, HPA 1→5
     ├── skill-assessment-agent-deployment.yaml # Fargate, HPA 1→5
@@ -64,7 +63,6 @@ graph TB
                     COORD["coordinator-agent"]
                     RESUME["resume-intake-agent"]
                     SCREEN["screening-agent"]
-                    SKILL["skill-assessment-agent"]
                     AUDIT["audit-agent"]
                     RANKING["ranking-agent"]
                     SKILL["skill-assessment-agent"]
@@ -78,11 +76,11 @@ graph TB
 
     Internet --> IGW --> ALB --> FE
     COORD --> RDS
-    RESUME --> RDS
-    SCREEN --> RDS
-    AUDIT --> RDS
-    RANKING --> RDS
-    SKILL --> RDS
+    COORD <--> RESUME
+    COORD <--> SCREEN
+    COORD <--> AUDIT
+    COORD <--> RANKING
+    COORD <--> SKILL
     PrivSub --> NAT --> IGW
     EKS -.-> ECR
 ```
@@ -420,8 +418,8 @@ A specialized, integrated workflow designed to reduce dev environment costs by d
 
 ## Current Workflow Note
 
-- `deploy-services.yml` now covers `coordinator-agent`, `resume-intake-agent`, `screening-agent`, `skill-assessment-agent`, `ranking-agent`, and `audit-agent`.
-- `terraform.yml` and `terraform-manage.yml` still hard-code a smaller service list when they capture or re-apply backend image tags, so keep those workflows in sync when new service manifests are added.
+- `deploy-services.yml` now dynamically builds and deploys successful services: `coordinator-agent`, `resume-intake-agent`, `screening-agent`, `skill-assessment-agent`, `ranking-agent`, and `audit-agent`.
+- When adding new services, ensure both `terraform.yml` and `terraform-manage.yml` are also updated to capture and re-apply image tags.
 
 ---
 
