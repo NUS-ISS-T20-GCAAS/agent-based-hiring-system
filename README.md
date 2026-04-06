@@ -10,6 +10,7 @@ An explainable hiring workflow built as cooperating services:
 - `audit-agent` for bias and compliance checks
 - `ranking-agent` for manual re-ranking of candidates in a job
 - `postgres` for jobs, candidates, workflow runs, and artifacts
+- `redis` for the Celery task broker and event PubSub
 - `infra/terraform` for AWS infrastructure definitions
 
 ## Current Status
@@ -17,8 +18,8 @@ An explainable hiring workflow built as cooperating services:
 The current codebase supports a working queued backend flow:
 
 1. Create a job through the metadata-only `POST /jobs/create` form, or upload resumes to an existing job with `POST /candidates/upload` or `POST /candidates/batch-upload`.
-2. The coordinator parses uploaded TXT, PDF, and DOCX resumes and enqueues workflow jobs in Postgres.
-3. A coordinator worker claims queued jobs, upserts job metadata, creates a candidate for each uploaded resume, and opens a workflow run.
+2. The coordinator parses uploaded TXT, PDF, and DOCX resumes and dispatches Celery tasks via Redis.
+3. A separate Celery worker (running the coordinator image with a specialized entrypoint) picks up the tasks, upserts job metadata, creates a candidate for each uploaded resume, and opens a workflow run.
 4. The coordinator calls `resume-intake-agent`.
 5. The coordinator calls `skill-assessment-agent`.
 6. The coordinator calls `screening-agent`.
@@ -78,6 +79,8 @@ To minimize AWS costs when the environment is not in active use (saving ~$3.50/d
 - Python 3.11
 - FastAPI
 - PostgreSQL 15
+- Redis 7
+- Celery
 - React 18 + Vite + Tailwind CSS
 - Docker / Docker Compose
 - Terraform for AWS infrastructure
@@ -87,6 +90,8 @@ To minimize AWS costs when the environment is not in active use (saving ~$3.50/d
 
 - Agents share a common artifact contract with `payload`, `confidence`, and `explanation`.
 - The coordinator is the system of record for workflow orchestration and persistence.
+- Asynchronous processing is handled by a distributed Celery worker pool backed by a Redis broker.
+- Cross-process live activity updates are bridged through Redis PubSub from the worker back to the API's WebSocket event hub.
 - The coordinator can now generate an optional LLM-backed orchestration plan that is persisted and passed into downstream stages.
 - Agent-local shared memory is still present for service-level replay and diagnostics.
 - Resume intake, coordinator orchestration, skill assessment, screening, and audit attempt OpenAI-backed execution when `OPENAI_API_KEY` is configured.
@@ -189,6 +194,7 @@ This starts:
 - skill assessment on `http://localhost:8005`
 - ranking on `http://localhost:8004`
 - postgres on `localhost:5432`
+- redis on `localhost:6379`
 
 ### Start the backend-only stack
 
@@ -232,5 +238,4 @@ There are unit tests for the coordinator, resume intake, skill assessment, scree
 
 ## Current Gaps
 
-- The current queue worker runs inside the coordinator process rather than in a separate multi-process queue stack such as Redis/Celery.
 - Heuristic extraction and explanation quality still have room to improve.

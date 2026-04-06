@@ -11,6 +11,8 @@ This directory contains the local backend service stack for the hiring system.
 - `audit-agent`
 - `ranking-agent`
 - `postgres`
+- `redis` (Celery broker)
+- `celery-worker` (Async task worker)
 
 ## Purpose
 
@@ -20,8 +22,8 @@ The coordinator is responsible for:
 
 - receiving workflow requests
 - parsing uploaded resume files
-- enqueuing durable upload workflows in Postgres
-- calling agent services over HTTP
+- dispatching asynchronous workflows to Celery via Redis
+- calling agent services over HTTP from the Celery worker
 - persisting workflow state and artifacts to Postgres
 - exposing read APIs for jobs, candidates, decisions, stats, health, and audit checks
 
@@ -30,8 +32,8 @@ The coordinator is responsible for:
 The default coordinator path is:
 
 1. accept upload requests and parse TXT, PDF, or DOCX resumes
-2. enqueue workflow jobs in Postgres
-3. coordinator worker claims queued jobs
+2. dispatch workflow task to Celery via Redis
+3. Celery worker process picks up the job
 4. bootstrap job, candidate, and workflow state
 5. call resume intake
 6. call skill assessment
@@ -58,6 +60,7 @@ Ports:
 - audit: `8003`
 - ranking: `8004`
 - postgres: `5432`
+- redis: `6379`
 
 ## Apply Migrations
 
@@ -78,8 +81,9 @@ Relevant local environment variables:
 - `SKILL_ASSESSMENT_AGENT_URL`
 - `RANKING_AGENT_URL`
 - `AUDIT_AGENT_URL`
+- `CELERY_BROKER_URL`
+- `CELERY_RESULT_BACKEND`
 - `REQUEST_TIMEOUT`
-- `QUEUE_POLL_INTERVAL_SECONDS`
 - `DB_HOST`
 - `DB_PORT`
 - `DB_NAME`
@@ -92,7 +96,7 @@ Behavior notes:
 - Resume intake, skill assessment, screening, and audit use OpenAI when configured and fall back when unavailable.
 - Skill assessment focuses on competency/gap analysis rather than pass/fail decisions.
 - Ranking is heuristic only in the current codebase.
-- Coordinator health now includes queue worker state and workflow queue counts when the database is reachable.
+- Coordinator health and `/queue/status` endpoints now report Celery broker connectivity and worker task statistics (active/reserved/scheduled) when Redis is reachable.
 
 ## Upload Support
 
@@ -128,5 +132,6 @@ Parsing dependencies are installed in `coordinator-agent/requirements.txt`.
 ## Notes
 
 - This compose file is intended for development and local verification.
-- Upload-triggered workflows are queued and processed asynchronously by the coordinator worker.
+- Upload-triggered workflows are dispatched to Redis and processed asynchronously by the Celery worker process.
+- Cross-process live activity updates are bridged using Redis PubSub.
 - Agent-local shared memory exists, but Postgres-backed coordinator persistence is the primary system of record.
