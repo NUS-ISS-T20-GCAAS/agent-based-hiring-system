@@ -19,29 +19,68 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Filter changes
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            coordinator-agent:
+              - 'services/coordinator-agent/**'
+            resume-intake-agent:
+              - 'services/resume-intake-agent/**'
+            screening-agent:
+              - 'services/screening-agent/**'
+            skill-assessment-agent:
+              - 'services/skill-assessment-agent/**'
+            ranking-agent:
+              - 'services/ranking-agent/**'
+            audit-agent:
+              - 'services/audit-agent/**'
+
       # Decide final service list (SINGLE source of truth)
       - name: Set services list
         id: set-services
         shell: bash
         run: |
+          # Use input services if provided, else use auto-detected list
           SERVICES="${{ inputs.services }}"
-
+          
           if [ -n "$SERVICES" ]; then
-            # Handle the "all" option explicitly
+            # Case 1: Manual Input (Single service, Comma list, or "all")
             if [ "$SERVICES" = "all" ]; then
               SERVICES="coordinator-agent,resume-intake-agent,screening-agent,skill-assessment-agent,ranking-agent,audit-agent"
             fi
+            echo "Using manual service list: $SERVICES"
+          else
+            # Case 2: Auto Detection
+            echo "No manual services list provided. Detecting changes..."
+            S_LIST=()
+            [[ "${{ steps.filter.outputs.coordinator-agent }}" == "true" ]] && S_LIST+=("coordinator-agent")
+            [[ "${{ steps.filter.outputs.resume-intake-agent }}" == "true" ]] && S_LIST+=("resume-intake-agent")
+            [[ "${{ steps.filter.outputs.screening-agent }}" == "true" ]] && S_LIST+=("screening-agent")
+            [[ "${{ steps.filter.outputs.skill-assessment-agent }}" == "true" ]] && S_LIST+=("skill-assessment-agent")
+            [[ "${{ steps.filter.outputs.ranking-agent }}" == "true" ]] && S_LIST+=("ranking-agent")
+            [[ "${{ steps.filter.outputs.audit-agent }}" == "true" ]] && S_LIST+=("audit-agent")
             
+            # Combine into a comma-separated list
+            SERVICES=$(IFS=,; echo "${S_LIST[*]}")
+            echo "Auto-detected services: $SERVICES"
+          fi
+          
+          # Final validation and format conversion
+          if [ -n "$SERVICES" ]; then
             # Format the output for the matrix array
             JSON=$(printf '["%s"]' "${SERVICES//,/\",\"}")
             echo "services=$JSON" >> $GITHUB_OUTPUT
+            echo "Final matrix output: $JSON"
           else
             echo "services=[]" >> $GITHUB_OUTPUT
+            echo "No changes detected requiring a build."
           fi
 
       - name: Debug services
         run: |
-          echo "Services to build: ${{ steps.set-services.outputs.services }}"
+          echo "Selected services to build: ${{ steps.set-services.outputs.services }}"
 
   build:
     needs: detect-changes
