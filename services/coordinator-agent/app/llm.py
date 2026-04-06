@@ -33,7 +33,7 @@ class CoordinatorLLM:
         job_requirements: dict[str, Any],
     ) -> dict[str, Any]:
         if not self._client:
-            raise RuntimeError("OPENAI_API_KEY or OpenAI SDK is not configured test")
+            raise RuntimeError("OPENAI_API_KEY or OpenAI SDK is not configured")
 
         response = self._client.responses.create(
             model=OPENAI_MODEL,
