@@ -12,6 +12,10 @@ import app.celery_app  # noqa: F401
 
 app = FastAPI(title="Coordinator Agent")
 
+@app.on_event("startup")
+async def startup_event():
+    asyncio.create_task(event_hub.start_redis_listener())
+
 app.include_router(router)
 
 

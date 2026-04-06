@@ -51,29 +51,40 @@ class EventHub:
                     self._connections.discard(websocket)
 
     def publish(self, message: dict[str, Any]) -> None:
-        if self.active_count() == 0:
-            return
+        """Publish message. Always pushes to Redis PubSub if available."""
+        import json
+        import redis
+        from app.config import CELERY_BROKER_URL
+
+        # Push to Redis so any process (like celery) can send to the FastAPI websockets
+        try:
+            r = redis.Redis.from_url(CELERY_BROKER_URL, socket_connect_timeout=2)
+            r.publish("coordinator_events", json.dumps(message))
+            r.close()
+        except Exception:
+            # Fallback to local push if Redis is somehow unavailable
+            pass
+
+    async def start_redis_listener(self) -> None:
+        """Background task for FastAPI to listen to Redis and broadcast to websockets."""
+        import json
+        from redis import asyncio as aioredis
+        from app.config import CELERY_BROKER_URL
 
         try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            loop = None
+            r = aioredis.from_url(CELERY_BROKER_URL)
+            pubsub = r.pubsub()
+            await pubsub.subscribe("coordinator_events")
+            async for message in pubsub.listen():
+                if message["type"] == "message":
+                    try:
+                        data = json.loads(message["data"])
+                        await self.broadcast(data)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
 
-        if loop and loop.is_running():
-            loop.create_task(self.broadcast(message))
-            return
-
-        with self._lock:
-            background_loop = self._loop
-
-        if background_loop and background_loop.is_running():
-            asyncio.run_coroutine_threadsafe(self.broadcast(message), background_loop)
-            return
-
-        try:
-            anyio.from_thread.run(self.broadcast, message)
-        except RuntimeError:
-            return
 
 
 event_hub = EventHub()
