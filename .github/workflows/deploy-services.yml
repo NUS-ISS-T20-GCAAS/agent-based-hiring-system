@@ -33,8 +33,6 @@ jobs:
   # 1. Reusable Build Job
   build:
     uses: ./.github/workflows/build.yml
-    with:
-      services: all
     secrets: inherit
 
   # 2. Deploy Job
