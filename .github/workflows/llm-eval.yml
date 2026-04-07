@@ -61,21 +61,57 @@ jobs:
         run: npm install -g promptfoo
 
       - name: Eval — Resume Intake Agent
-        run: promptfoo eval --config tests/promptfoo/config-intake.yaml --no-cache
+        run: |
+          for attempt in 1 2 3; do
+            promptfoo eval --config tests/promptfoo/config-intake.yaml --no-cache && break
+            if [ "$attempt" -eq 3 ]; then
+              echo "Resume Intake eval failed after 3 attempts"
+              exit 1
+            fi
+            echo "Resume Intake eval failed (attempt $attempt), retrying..."
+            sleep 5
+          done
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 
       - name: Eval — Screening Agent
-        run: promptfoo eval --config tests/promptfoo/config-screening.yaml --no-cache
+        run: |
+          for attempt in 1 2 3; do
+            promptfoo eval --config tests/promptfoo/config-screening.yaml --no-cache && break
+            if [ "$attempt" -eq 3 ]; then
+              echo "Screening eval failed after 3 attempts"
+              exit 1
+            fi
+            echo "Screening eval failed (attempt $attempt), retrying..."
+            sleep 5
+          done
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 
       - name: Eval — Skill Assessment Agent
-        run: promptfoo eval --config tests/promptfoo/config-skill-assessment.yaml --no-cache
+        run: |
+          for attempt in 1 2 3; do
+            promptfoo eval --config tests/promptfoo/config-skill-assessment.yaml --no-cache && break
+            if [ "$attempt" -eq 3 ]; then
+              echo "Skill Assessment eval failed after 3 attempts"
+              exit 1
+            fi
+            echo "Skill Assessment eval failed (attempt $attempt), retrying..."
+            sleep 5
+          done
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 
       - name: Eval — Audit Agent
-        run: promptfoo eval --config tests/promptfoo/config-audit.yaml --no-cache
+        run: |
+          for attempt in 1 2 3; do
+            promptfoo eval --config tests/promptfoo/config-audit.yaml --no-cache && break
+            if [ "$attempt" -eq 3 ]; then
+              echo "Audit eval failed after 3 attempts"
+              exit 1
+            fi
+            echo "Audit eval failed (attempt $attempt), retrying..."
+            sleep 5
+          done
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
