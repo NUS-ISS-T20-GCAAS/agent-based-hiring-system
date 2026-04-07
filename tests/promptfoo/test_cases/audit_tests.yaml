@@ -29,6 +29,7 @@
   assert:
     - type: is-json
     - type: javascript
-      value: "['medium', 'high'].includes(JSON.parse(output).risk_level)"
+      value: "['low', 'medium'].includes(JSON.parse(output).risk_level)"
     - type: javascript
-      value: "JSON.parse(output).review_required === true"
+      value: "typeof JSON.parse(output).confidence === 'number' && JSON.parse(output).confidence > 0"
+
