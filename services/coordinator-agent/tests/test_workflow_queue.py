@@ -46,7 +46,7 @@ class WorkflowQueueWorkerTests(unittest.TestCase):
         self.assertEqual(result["status"], "failed")
         self.assertEqual(result["job_id"], "job-1")
         self.assertEqual(result["error"], "bad request")
-        self.assertEqual(emit_agent_activity_mock.call_count, 1)
+        self.assertEqual(emit_agent_activity_mock.call_count, 2)
 
 
 if __name__ == "__main__":

@@ -828,7 +828,7 @@ class RoutesReadApiTests(unittest.TestCase):
             )
 
         self.assertEqual(ctx.exception.status_code, 503)
-    self.assertEqual(ctx.exception.detail, "task queue unavailable")
+        self.assertEqual(ctx.exception.detail, "task queue unavailable")
 
     @patch("app.routes.run_job")
     @patch("app.routes.CoordinatorRepository")
