@@ -564,6 +564,7 @@ jobs:
           sed -i "s/<IMAGE_TAG>/${{ steps.image-tags.outputs.audit_tag }}/g" ${{ env.TF_DIR }}/k8s/audit-agent-deployment.yaml 2>/dev/null || true
           sed -i "s/<IMAGE_TAG>/${{ steps.image-tags.outputs.ranking_tag }}/g" ${{ env.TF_DIR }}/k8s/ranking-agent-deployment.yaml 2>/dev/null || true
           sed -i "s/<IMAGE_TAG>/${{ steps.image-tags.outputs.skill_tag }}/g" ${{ env.TF_DIR }}/k8s/skill-assessment-agent-deployment.yaml 2>/dev/null || true
+          sed -i "s/<IMAGE_TAG>/${{ steps.image-tags.outputs.coordinator_tag }}/g" ${{ env.TF_DIR }}/k8s/celery-worker-deployment.yaml
 
           echo ""
           echo "Final image references:"
@@ -601,6 +602,11 @@ jobs:
           echo "=== Applying Secrets ==="
           kubectl apply -f ${{ env.TF_DIR }}/k8s/secrets.yaml
 
+          echo "=== Deploying Redis ==="
+          kubectl apply -f ${{ env.TF_DIR }}/k8s/redis-deployment.yaml
+          echo "Waiting for Redis rollout..."
+          kubectl rollout status deployment/redis -n services --timeout=120s
+
           echo "=== Applying Deployments ==="
           kubectl apply -f ${{ env.TF_DIR }}/k8s/frontend-deployment.yaml
           kubectl apply -f ${{ env.TF_DIR }}/k8s/coordinator-agent-deployment.yaml
@@ -609,6 +615,29 @@ jobs:
           kubectl apply -f ${{ env.TF_DIR }}/k8s/audit-agent-deployment.yaml 2>/dev/null || true
           kubectl apply -f ${{ env.TF_DIR }}/k8s/ranking-agent-deployment.yaml 2>/dev/null || true
           kubectl apply -f ${{ env.TF_DIR }}/k8s/skill-assessment-agent-deployment.yaml 2>/dev/null || true
+
+          echo "=== Deploying Celery Worker ==="
+          kubectl apply -f ${{ env.TF_DIR }}/k8s/celery-worker-deployment.yaml
+          echo "Waiting for celery-worker rollout..."
+          kubectl rollout status deployment/celery-worker -n services --timeout=300s
+
+      - name: Verify Service Rollouts
+        run: |
+          echo "=== Verifying required rollouts ==="
+          kubectl rollout status deployment/redis -n services --timeout=120s
+          kubectl rollout status deployment/coordinator-agent -n services --timeout=300s
+          kubectl rollout status deployment/resume-intake-agent -n services --timeout=300s
+          kubectl rollout status deployment/screening-agent -n services --timeout=300s
+          kubectl rollout status deployment/celery-worker -n services --timeout=300s
+
+          echo "=== Verifying optional rollouts if present ==="
+          for SERVICE in audit-agent ranking-agent skill-assessment-agent; do
+            if kubectl get deployment "$SERVICE" -n services >/dev/null 2>&1; then
+              kubectl rollout status deployment/"$SERVICE" -n services --timeout=300s
+            else
+              echo "Skipping $SERVICE rollout check (deployment not present)."
+            fi
+          done
 
       - name: Verify Deployment
         run: |
