@@ -734,11 +734,16 @@ class RoutesReadApiTests(unittest.TestCase):
         self.assertFalse(result["review_required"])
         self.assertEqual(post_mock.call_count, 1)
 
+    @patch("app.tasks.run_workflow_task.delay")
     @patch("app.routes.CoordinatorRepository")
-    def test_batch_upload_route(self, repo_cls):
+    def test_batch_upload_route(self, repo_cls, delay_mock):
         repository = FakeRepository()
         repo_cls.return_value = repository
         background_tasks = BackgroundTasks()
+        delay_mock.side_effect = [
+            type("TaskResult", (), {"id": "task-1"})(),
+            type("TaskResult", (), {"id": "task-2"})(),
+        ]
 
         files = [
             FakeUploadFile("a.txt", b"Python FastAPI engineer", "text/plain"),
@@ -750,20 +755,26 @@ class RoutesReadApiTests(unittest.TestCase):
         self.assertEqual(result["failed"], 0)
         self.assertEqual(result["status"], "accepted")
         self.assertEqual(len(background_tasks.tasks), 0)
-        self.assertEqual(len(repository.enqueued_jobs), 2)
-        first_request = repository.enqueued_jobs[0]["request"]
-        self.assertEqual(first_request.required_skills, ["python", "fastapi"])
-        self.assertEqual(first_request.preferred_skills, ["docker"])
-        self.assertEqual(first_request.min_years_experience, 3)
+        self.assertEqual(delay_mock.call_count, 2)
+        first_payload = delay_mock.call_args_list[0].args[0]
+        self.assertEqual(first_payload["required_skills"], ["python", "fastapi"])
+        self.assertEqual(first_payload["preferred_skills"], ["docker"])
+        self.assertEqual(first_payload["min_years_experience"], 3)
         self.assertEqual(result["results"][0]["status"], "queued")
-        self.assertEqual(result["results"][0]["queue_id"], "queue-1")
+        self.assertEqual(result["results"][0]["task_id"], "task-1")
         self.assertEqual(repository.processing_marked, ["job-1", "job-1"])
 
+    @patch("app.tasks.run_workflow_task.delay")
     @patch("app.routes.CoordinatorRepository")
-    def test_batch_upload_route_extracts_txt_pdf_and_docx(self, repo_cls):
+    def test_batch_upload_route_extracts_txt_pdf_and_docx(self, repo_cls, delay_mock):
         repository = FakeRepository()
         repo_cls.return_value = repository
         background_tasks = BackgroundTasks()
+        delay_mock.side_effect = [
+            type("TaskResult", (), {"id": "task-1"})(),
+            type("TaskResult", (), {"id": "task-2"})(),
+            type("TaskResult", (), {"id": "task-3"})(),
+        ]
 
         files = [
             FakeUploadFile("resume.txt", b"Senior Python engineer", "text/plain"),
@@ -780,10 +791,10 @@ class RoutesReadApiTests(unittest.TestCase):
         self.assertEqual(result["queued"], 3)
         self.assertEqual(result["failed"], 0)
         self.assertEqual(len(background_tasks.tasks), 0)
-        self.assertEqual(len(repository.enqueued_jobs), 3)
-        self.assertEqual(repository.enqueued_jobs[0]["request"].resume_text, "Senior Python engineer")
-        self.assertIn("PDF Resume Text", repository.enqueued_jobs[1]["request"].resume_text)
-        self.assertIn("DOCX Resume Text", repository.enqueued_jobs[2]["request"].resume_text)
+        self.assertEqual(delay_mock.call_count, 3)
+        self.assertEqual(delay_mock.call_args_list[0].args[0]["resume_text"], "Senior Python engineer")
+        self.assertIn("PDF Resume Text", delay_mock.call_args_list[1].args[0]["resume_text"])
+        self.assertIn("DOCX Resume Text", delay_mock.call_args_list[2].args[0]["resume_text"])
 
     @patch("app.routes.CoordinatorRepository")
     def test_upload_route_rejects_unsupported_resume_type(self, repo_cls):
@@ -801,14 +812,10 @@ class RoutesReadApiTests(unittest.TestCase):
         self.assertEqual(ctx.exception.status_code, 415)
         self.assertIn("unsupported resume file type", ctx.exception.detail)
 
+    @patch("app.tasks.run_workflow_task.delay", side_effect=RuntimeError("broker down"))
     @patch("app.routes.CoordinatorRepository")
-    def test_upload_route_returns_503_when_queue_is_unavailable(self, repo_cls):
+    def test_upload_route_returns_503_when_queue_is_unavailable(self, repo_cls, _delay_mock):
         repository = FakeRepository()
-
-        def failing_enqueue(**_kwargs):
-            raise RuntimeError("db down")
-
-        repository.enqueue_workflow_job = failing_enqueue
         repo_cls.return_value = repository
 
         with self.assertRaises(HTTPException) as ctx:
@@ -821,7 +828,7 @@ class RoutesReadApiTests(unittest.TestCase):
             )
 
         self.assertEqual(ctx.exception.status_code, 503)
-        self.assertEqual(ctx.exception.detail, "workflow queue unavailable")
+    self.assertEqual(ctx.exception.detail, "task queue unavailable")
 
     @patch("app.routes.run_job")
     @patch("app.routes.CoordinatorRepository")

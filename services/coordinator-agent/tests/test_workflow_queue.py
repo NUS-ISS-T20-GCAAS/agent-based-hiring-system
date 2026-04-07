@@ -1,105 +1,52 @@
 import unittest
+from types import SimpleNamespace
+from unittest.mock import patch
+
 from fastapi import HTTPException
 
 from app.schemas import JobRequest
-from app.workflow_queue import WorkflowQueueWorker
-
-
-class FakeQueueRepository:
-    def __init__(self, queued_job=None):
-        self.queued_job = queued_job
-        self.completed_queue_id = None
-        self.failed = None
-
-    def claim_next_workflow_job(self):
-        job = self.queued_job
-        self.queued_job = None
-        return job
-
-    def mark_workflow_job_completed(self, *, queue_id: str):
-        self.completed_queue_id = queue_id
-
-    def mark_workflow_job_failed(self, *, queue_id: str, error: str):
-        self.failed = {
-            "queue_id": queue_id,
-            "error": error,
-        }
+from app.tasks import run_workflow_task
 
 
 class WorkflowQueueWorkerTests(unittest.TestCase):
-    def test_process_next_job_runs_claimed_request_and_marks_complete(self):
-        queued_job = {
-            "queue_id": "queue-1",
-            "job_id": "job-1",
-            "filename": "resume.txt",
-            "request_payload": JobRequest(
-                job_id="job-1",
-                resume_url="upload://resume.txt",
-                resume_text="Python engineer",
-                job_description="Need python",
-                required_skills=["python"],
-            ).model_dump(),
-        }
-        repository = FakeQueueRepository(queued_job=queued_job)
-        seen_requests = []
-        worker = WorkflowQueueWorker(
-            repository_factory=lambda: repository,
-            run_job_fn=lambda request: seen_requests.append(request),
-            poll_interval_seconds=0.01,
-        )
+    @patch("app.tasks.emit_agent_activity")
+    @patch("app.tasks.run_job")
+    def test_run_workflow_task_returns_completed_payload(self, run_job_mock, emit_agent_activity_mock):
+        request_payload = JobRequest(
+            job_id="job-1",
+            resume_url="upload://resume.txt",
+            resume_text="Python engineer",
+            job_description="Need python",
+            required_skills=["python"],
+        ).model_dump()
 
-        processed = worker.process_next_job()
+        run_job_mock.return_value = SimpleNamespace(job_id="job-1", artifact_id="artifact-1")
 
-        self.assertTrue(processed)
-        self.assertEqual(repository.completed_queue_id, "queue-1")
-        self.assertIsNone(repository.failed)
-        self.assertEqual(len(seen_requests), 1)
-        self.assertEqual(seen_requests[0].job_id, "job-1")
+        result = run_workflow_task.run(request_payload, "resume.txt")
 
-    def test_process_next_job_marks_failure_when_workflow_raises(self):
-        queued_job = {
-            "queue_id": "queue-2",
-            "job_id": "job-1",
-            "filename": "resume.txt",
-            "request_payload": JobRequest(
-                job_id="job-1",
-                resume_url="upload://resume.txt",
-                resume_text="Python engineer",
-                job_description="Need python",
-            ).model_dump(),
-        }
-        repository = FakeQueueRepository(queued_job=queued_job)
+        self.assertEqual(result["status"], "completed")
+        self.assertEqual(result["job_id"], "job-1")
+        self.assertEqual(result["artifact_id"], "artifact-1")
+        self.assertEqual(run_job_mock.call_count, 1)
+        self.assertEqual(emit_agent_activity_mock.call_count, 2)
 
-        def failing_run_job(_request):
-            raise HTTPException(status_code=503, detail="audit unavailable")
+    @patch("app.tasks.emit_agent_activity")
+    @patch("app.tasks.run_job", side_effect=HTTPException(status_code=400, detail="bad request"))
+    def test_run_workflow_task_returns_failed_payload_for_http_exception(self, _run_job_mock, emit_agent_activity_mock):
+        request_payload = JobRequest(
+            job_id="job-1",
+            resume_url="upload://resume.txt",
+            resume_text="Python engineer",
+            job_description="Need python",
+            required_skills=["python"],
+        ).model_dump()
 
-        worker = WorkflowQueueWorker(
-            repository_factory=lambda: repository,
-            run_job_fn=failing_run_job,
-            poll_interval_seconds=0.01,
-        )
+        result = run_workflow_task.run(request_payload, "resume.txt")
 
-        processed = worker.process_next_job()
-
-        self.assertTrue(processed)
-        self.assertIsNone(repository.completed_queue_id)
-        self.assertEqual(
-            repository.failed,
-            {
-                "queue_id": "queue-2",
-                "error": "audit unavailable",
-            },
-        )
-
-    def test_process_next_job_returns_false_when_queue_is_empty(self):
-        repository = FakeQueueRepository()
-        worker = WorkflowQueueWorker(
-            repository_factory=lambda: repository,
-            run_job_fn=lambda _request: None,
-            poll_interval_seconds=0.01,
-        )
-
-        self.assertFalse(worker.process_next_job())
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(result["job_id"], "job-1")
+        self.assertEqual(result["error"], "bad request")
+        self.assertEqual(emit_agent_activity_mock.call_count, 1)
 
 
 if __name__ == "__main__":
