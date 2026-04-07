@@ -6,11 +6,12 @@ providers:
       temperature: 0.3
       max_tokens: 1000
 
-# Strip markdown code fences (```json ... ```) if the LLM wraps its output.
+# Strip markdown code fences (```json ... ```) before assertions run.
 # Mirrors what _extract_json() does in production.
 defaultTest:
   options:
-    transform: "output.replace(/^```(?:json)?\\s*/m, '').replace(/```\\s*$/m, '').trim()"
+    transform: |
+      return output.replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim();
 
 prompts:
   - label: "Skill Assessment System Prompt"
