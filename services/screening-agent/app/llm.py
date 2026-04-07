@@ -15,6 +15,7 @@ except ImportError:  # pragma: no cover - depends on runtime environment
     OpenAI = None
 
 from app.config import OPENAI_API_KEY, OPENAI_MODEL, OPENAI_TIMEOUT_SEC, QUALIFICATION_THRESHOLD
+from app.mlflow_tracker import track_llm_call
 
 
 def _extract_json(text: str) -> dict[str, Any]:
@@ -89,29 +90,36 @@ class ScreeningLLM:
         prompt = self._build_prompt(parsed_resume, job_description, job_requirements, orchestration_plan)
         
         try:
-            # Call OpenAI API
-            response = self._client.chat.completions.create(
+            with track_llm_call(
+                agent_name="screening",
                 model=OPENAI_MODEL,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": self._get_system_prompt()
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ],
-                temperature=0.3,  # Lower temperature for more consistent scoring
-                max_tokens=1000
-            )
-            
-            # Extract and parse response
-            output_text = response.choices[0].message.content
-            result = _extract_json(output_text)
-            
-            # Validate required fields
-            self._validate_result(result)
+                prompt_text=self._get_system_prompt(),
+                temperature=0.3,
+            ) as tracker:
+                # Call OpenAI API
+                response = self._client.chat.completions.create(
+                    model=OPENAI_MODEL,
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": self._get_system_prompt()
+                        },
+                        {
+                            "role": "user",
+                            "content": prompt
+                        }
+                    ],
+                    temperature=0.3,  # Lower temperature for more consistent scoring
+                    max_tokens=1000
+                )
+                
+                # Extract and parse response
+                output_text = response.choices[0].message.content
+                result = _extract_json(output_text)
+                
+                # Validate required fields
+                self._validate_result(result)
+                tracker["confidence"] = result.get("confidence", 0)
             
             return result
             

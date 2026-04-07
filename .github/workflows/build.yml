@@ -110,6 +110,15 @@ jobs:
             -t ghcr.io/${{ env.REPO_LOWER }}/${{ matrix.service }}:${{ github.sha }} \
             services/${{ matrix.service }}
 
+      - name: Scan Docker image with Trivy
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ghcr.io/${{ env.REPO_LOWER }}/${{ matrix.service }}:${{ github.sha }}
+          format: 'table'
+          exit-code: '1'
+          severity: 'CRITICAL'
+          ignore-unfixed: true
+
       - name: Login to GHCR
         run: |
           echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io \

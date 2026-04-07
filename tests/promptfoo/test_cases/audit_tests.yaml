@@ -1,0 +1,34 @@
+# Promptfoo test cases for Audit Agent
+- vars:
+    audit_input: |
+      {"job_id": "job-001", "stats": {"total_candidates": 10, "shortlisted": 4, "rejected": 6, "selection_rate": 0.4}, "candidates": [{"id": "c1", "status": "shortlisted"}, {"id": "c2", "status": "rejected"}], "decisions": [{"candidate_id": "c1", "recommendation": "SHORTLIST", "confidence": 0.9}, {"candidate_id": "c2", "recommendation": "REJECT", "confidence": 0.85}]}
+  assert:
+    - type: is-json
+    - type: javascript
+      value: "JSON.parse(output).risk_level === 'low'"
+    - type: javascript
+      value: "JSON.parse(output).review_required === false"
+    - type: javascript
+      value: "Array.isArray(JSON.parse(output).bias_flags) && JSON.parse(output).bias_flags.length === 0"
+
+- vars:
+    audit_input: |
+      {"job_id": "job-002", "stats": {"total_candidates": 20, "shortlisted": 1, "rejected": 19, "selection_rate": 0.05}, "candidates": [{"id": "c1", "status": "shortlisted"}], "decisions": [{"candidate_id": "c1", "recommendation": "SHORTLIST", "confidence": 0.95}]}
+  assert:
+    - type: is-json
+    - type: javascript
+      value: "JSON.parse(output).risk_level === 'high'"
+    - type: javascript
+      value: "JSON.parse(output).review_required === true"
+    - type: javascript
+      value: "JSON.parse(output).bias_flags.some(f => f.toLowerCase().includes('selection_rate'))"
+
+- vars:
+    audit_input: |
+      {"job_id": "job-003", "stats": {"total_candidates": 8, "shortlisted": 3, "rejected": 5, "selection_rate": 0.375}, "candidates": [{"id": "c1", "status": "shortlisted"}, {"id": "c2", "status": "rejected"}], "decisions": [{"candidate_id": "c1", "recommendation": "SHORTLIST", "confidence": 0.88}, {"candidate_id": "c2", "recommendation": "REJECT", "confidence": 0.48}]}
+  assert:
+    - type: is-json
+    - type: javascript
+      value: "['medium', 'high'].includes(JSON.parse(output).risk_level)"
+    - type: javascript
+      value: "JSON.parse(output).review_required === true"

@@ -1,0 +1,83 @@
+[
+  {
+    "id": "rank-001",
+    "description": "Clear ranking — three candidates with distinct score levels",
+    "input": {
+      "candidates": [
+        {
+          "id": "c1", "name": "Top Candidate",
+          "qualification_score": 0.92, "skills_score": 0.88, "composite_score": 0.9,
+          "recommendation": "SHORTLIST", "status": "shortlisted",
+          "needs_human_review": false, "review_reasons": []
+        },
+        {
+          "id": "c2", "name": "Mid Candidate",
+          "qualification_score": 0.65, "skills_score": 0.60, "composite_score": 0.63,
+          "recommendation": "CONSIDER", "status": "shortlisted",
+          "needs_human_review": false, "review_reasons": []
+        },
+        {
+          "id": "c3", "name": "Weak Candidate",
+          "qualification_score": 0.30, "skills_score": 0.25, "composite_score": 0.28,
+          "recommendation": "REJECT", "status": "rejected",
+          "needs_human_review": false, "review_reasons": []
+        }
+      ]
+    },
+    "expected_output": {
+      "rank_order": ["c1", "c2", "c3"],
+      "top_candidate_id": "c1",
+      "top_action": "INVITE_TO_INTERVIEW",
+      "bottom_action": "REJECT"
+    }
+  },
+  {
+    "id": "rank-002",
+    "description": "Tie-breaking — two candidates with similar scores",
+    "input": {
+      "candidates": [
+        {
+          "id": "c1", "name": "Candidate Alpha",
+          "qualification_score": 0.80, "skills_score": 0.75, "composite_score": 0.78,
+          "recommendation": "SHORTLIST", "status": "shortlisted",
+          "needs_human_review": false, "review_reasons": []
+        },
+        {
+          "id": "c2", "name": "Candidate Beta",
+          "qualification_score": 0.79, "skills_score": 0.76, "composite_score": 0.78,
+          "recommendation": "SHORTLIST", "status": "shortlisted",
+          "needs_human_review": false, "review_reasons": []
+        }
+      ]
+    },
+    "expected_output": {
+      "both_candidates_scored": true,
+      "scores_within_delta": 0.1,
+      "both_actions_should_match": true
+    }
+  },
+  {
+    "id": "rank-003",
+    "description": "Human review flag — strong candidate but flagged for review",
+    "input": {
+      "candidates": [
+        {
+          "id": "c1", "name": "Flagged Candidate",
+          "qualification_score": 0.85, "skills_score": 0.80, "composite_score": 0.83,
+          "recommendation": "SHORTLIST", "status": "shortlisted",
+          "needs_human_review": true, "review_reasons": ["low confidence screening decision"]
+        },
+        {
+          "id": "c2", "name": "Clean Candidate",
+          "qualification_score": 0.75, "skills_score": 0.70, "composite_score": 0.73,
+          "recommendation": "SHORTLIST", "status": "shortlisted",
+          "needs_human_review": false, "review_reasons": []
+        }
+      ]
+    },
+    "expected_output": {
+      "flagged_candidate_action": "HOLD_FOR_REVIEW",
+      "clean_candidate_not_held": true
+    }
+  }
+]

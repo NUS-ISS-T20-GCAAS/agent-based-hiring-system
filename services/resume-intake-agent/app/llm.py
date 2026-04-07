@@ -5,6 +5,7 @@ from typing import Any
 from openai import OpenAI
 
 from app.config import OPENAI_API_KEY, OPENAI_MODEL, OPENAI_TIMEOUT_SEC
+from app.mlflow_tracker import track_llm_call
 
 
 def _extract_json(text: str) -> dict[str, Any]:
@@ -16,6 +17,12 @@ def _extract_json(text: str) -> dict[str, Any]:
 
 
 class ResumeIntakeLLM:
+    _SYSTEM_PROMPT = (
+        "You are a resume intake agent. Extract structured candidate data from resume text. "
+        "Return strict JSON only with keys: name, email, skills, years_experience, summary. "
+        "skills must be an array of lowercase strings. years_experience must be a number."
+    )
+
     def __init__(self) -> None:
         self.enabled = bool(OPENAI_API_KEY)
         self._client = OpenAI(api_key=OPENAI_API_KEY, timeout=OPENAI_TIMEOUT_SEC) if self.enabled else None
@@ -24,17 +31,22 @@ class ResumeIntakeLLM:
         if not self._client:
             raise RuntimeError("OPENAI_API_KEY is not configured")
 
-        response = self._client.responses.create(
+        with track_llm_call(
+            agent_name="resume-intake",
             model=OPENAI_MODEL,
-            instructions=(
-                "You are a resume intake agent. Extract structured candidate data from resume text. "
-                "Return strict JSON only with keys: name, email, skills, years_experience, summary. "
-                "skills must be an array of lowercase strings. years_experience must be a number."
-            ),
-            input=(
-                f"Job description:\n{job_description}\n\n"
-                f"Resume URL:\n{resume_url}\n\n"
-                f"Resume text:\n{resume_text}"
-            ),
-        )
-        return _extract_json(response.output_text)
+            prompt_text=self._SYSTEM_PROMPT,
+        ) as tracker:
+            response = self._client.responses.create(
+                model=OPENAI_MODEL,
+                instructions=self._SYSTEM_PROMPT,
+                input=(
+                    f"Job description:\n{job_description}\n\n"
+                    f"Resume URL:\n{resume_url}\n\n"
+                    f"Resume text:\n{resume_text}"
+                ),
+            )
+            result = _extract_json(response.output_text)
+            tracker["confidence"] = 1.0  # extraction confidence is binary
+
+        return result
+

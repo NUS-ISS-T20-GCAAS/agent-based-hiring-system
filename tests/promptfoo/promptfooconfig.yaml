@@ -1,0 +1,62 @@
+# Promptfoo Configuration — Agent-Based Hiring System
+# Evaluates all LLM-backed agent prompts for regression detection
+#
+# Run: npx promptfoo eval --config tests/promptfoo/promptfooconfig.yaml
+
+description: "Agent-Based Hiring System — Prompt Regression Tests"
+
+providers:
+  - id: openai:gpt-4o-mini
+    config:
+      temperature: 0.3
+      max_tokens: 1000
+
+prompts:
+  # Resume Intake Agent
+  - id: resume-intake
+    label: "Resume Intake Agent"
+    raw: |
+      [{"role": "system", "content": "{{file://prompts/resume_intake_system.txt}}"},
+       {"role": "user", "content": "Job description:\n{{job_description}}\n\nResume text:\n{{resume_text}}"}]
+
+  # Screening Agent
+  - id: screening
+    label: "Screening Agent"
+    raw: |
+      [{"role": "system", "content": "{{file://prompts/screening_system.txt}}"},
+       {"role": "user", "content": "=== JOB DESCRIPTION ===\n{{job_description}}\n\n=== STRUCTURED REQUIREMENTS ===\n{{job_requirements}}\n\n=== CANDIDATE RESUME ===\n{{resume_data}}\n\n=== YOUR TASK ===\nEvaluate this candidate against the job requirements. Return a JSON object with the scoring data as specified in your system prompt."}]
+
+  # Skill Assessment Agent
+  - id: skill-assessment
+    label: "Skill Assessment Agent"
+    raw: |
+      [{"role": "system", "content": "{{file://prompts/skill_assessment_system.txt}}"},
+       {"role": "user", "content": "Job description:\n{{job_description}}\n\nStructured requirements:\n{{job_requirements}}\n\nParsed resume:\n{{parsed_resume}}\n\nResume text:\n{{resume_text}}"}]
+
+  # Audit Agent
+  - id: audit
+    label: "Audit Agent"
+    raw: |
+      [{"role": "system", "content": "{{file://prompts/audit_system.txt}}"},
+       {"role": "user", "content": "{{audit_input}}"}]
+
+scenarios:
+  - description: "Resume Intake Tests"
+    config:
+      prompt: resume-intake
+    tests: file://test_cases/intake_tests.yaml
+
+  - description: "Screening Tests"
+    config:
+      prompt: screening
+    tests: file://test_cases/screening_tests.yaml
+
+  - description: "Skill Assessment Tests"
+    config:
+      prompt: skill-assessment
+    tests: file://test_cases/skill_assessment_tests.yaml
+
+  - description: "Audit Tests"
+    config:
+      prompt: audit
+    tests: file://test_cases/audit_tests.yaml

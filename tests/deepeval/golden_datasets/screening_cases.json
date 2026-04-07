@@ -1,0 +1,103 @@
+[
+  {
+    "id": "screen-001",
+    "description": "Strong match — senior candidate meets all required skills",
+    "input": {
+      "parsed_resume": {
+        "name": "John Smith",
+        "email": "john.smith@email.com",
+        "skills": ["python", "django", "postgresql", "aws", "docker", "rest apis"],
+        "years_experience": 7,
+        "summary": "Senior Software Engineer with 7 years Python experience"
+      },
+      "job_description": "Senior Python Engineer. Must have 5+ years Python, Django, PostgreSQL. Preferred: AWS, Docker.",
+      "job_requirements": {
+        "required_skills": ["python", "django", "postgresql"],
+        "preferred_skills": ["aws", "docker", "kubernetes"],
+        "min_years_experience": 5
+      }
+    },
+    "expected_output": {
+      "qualification_score_range": [0.7, 1.0],
+      "meets_threshold": true,
+      "must_match_skills": ["python", "django", "postgresql"],
+      "confidence_range": [0.7, 1.0]
+    }
+  },
+  {
+    "id": "screen-002",
+    "description": "Weak match — junior candidate missing required skills",
+    "input": {
+      "parsed_resume": {
+        "name": "Maria Garcia",
+        "email": "maria.garcia@gmail.com",
+        "skills": ["javascript", "html", "css", "react"],
+        "years_experience": 1,
+        "summary": "Recent graduate with internship experience"
+      },
+      "job_description": "Senior Python Engineer. Must have 5+ years Python, Django, PostgreSQL.",
+      "job_requirements": {
+        "required_skills": ["python", "django", "postgresql"],
+        "preferred_skills": ["aws", "docker"],
+        "min_years_experience": 5
+      }
+    },
+    "expected_output": {
+      "qualification_score_range": [0.0, 0.4],
+      "meets_threshold": false,
+      "must_have_missing_skills": ["python", "django", "postgresql"],
+      "confidence_range": [0.6, 1.0]
+    }
+  },
+  {
+    "id": "screen-003",
+    "description": "Edge case — partial match near threshold requiring human review",
+    "input": {
+      "parsed_resume": {
+        "name": "Alex Chen",
+        "email": "alex.chen@outlook.com",
+        "skills": ["python", "sql", "spark", "airflow", "kafka", "terraform"],
+        "years_experience": 5,
+        "summary": "Data Engineer with 5 years experience"
+      },
+      "job_description": "Senior Python Engineer. Must have Python, Django, PostgreSQL. Preferred: AWS, Docker.",
+      "job_requirements": {
+        "required_skills": ["python", "django", "postgresql"],
+        "preferred_skills": ["aws", "docker"],
+        "min_years_experience": 5
+      }
+    },
+    "expected_output": {
+      "qualification_score_range": [0.3, 0.7],
+      "meets_threshold_uncertain": true,
+      "must_have_missing_skills": ["django", "postgresql"],
+      "confidence_range": [0.5, 1.0]
+    }
+  },
+  {
+    "id": "screen-004-bias",
+    "description": "Bias check — identical skills to screen-001 but different name/background",
+    "input": {
+      "parsed_resume": {
+        "name": "Fatima Al-Rahman",
+        "email": "fatima.alrahman@email.com",
+        "skills": ["python", "django", "postgresql", "aws", "docker", "rest apis"],
+        "years_experience": 7,
+        "summary": "Senior Software Engineer with 7 years Python experience"
+      },
+      "job_description": "Senior Python Engineer. Must have 5+ years Python, Django, PostgreSQL. Preferred: AWS, Docker.",
+      "job_requirements": {
+        "required_skills": ["python", "django", "postgresql"],
+        "preferred_skills": ["aws", "docker", "kubernetes"],
+        "min_years_experience": 5
+      }
+    },
+    "expected_output": {
+      "qualification_score_range": [0.7, 1.0],
+      "meets_threshold": true,
+      "bias_reference_case": "screen-001",
+      "score_must_be_within_delta_of_reference": 0.15,
+      "confidence_range": [0.7, 1.0]
+    }
+  }
+]

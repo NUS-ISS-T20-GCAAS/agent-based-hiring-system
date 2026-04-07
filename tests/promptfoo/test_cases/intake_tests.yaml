@@ -1,0 +1,50 @@
+# Promptfoo test cases for Resume Intake Agent
+- vars:
+    resume_text: |
+      John Smith
+      john.smith@email.com
+      Senior Software Engineer with 7 years of experience in Python, Django, and PostgreSQL.
+      Led a team of 5 developers at TechCorp building REST APIs.
+      Proficient in AWS, Docker, and CI/CD pipelines.
+      Bachelor's in Computer Science from NUS.
+    job_description: "Senior Python Engineer needed for backend API development. Must have 5+ years Python experience."
+  assert:
+    - type: is-json
+    - type: javascript
+      value: "JSON.parse(output).name && JSON.parse(output).name.length > 0"
+    - type: javascript
+      value: "JSON.parse(output).email && JSON.parse(output).email.includes('@')"
+    - type: javascript
+      value: "Array.isArray(JSON.parse(output).skills) && JSON.parse(output).skills.length >= 3"
+    - type: javascript
+      value: "typeof JSON.parse(output).years_experience === 'number'"
+
+- vars:
+    resume_text: |
+      Maria Garcia
+      maria.garcia@gmail.com
+      Recent graduate from NTU with a degree in Information Systems.
+      Completed internship at StartupXYZ working on React frontend.
+      Familiar with JavaScript, HTML, CSS, and basic Python scripting.
+    job_description: "Junior Full-Stack Developer with JavaScript and React knowledge."
+  assert:
+    - type: is-json
+    - type: javascript
+      value: "JSON.parse(output).skills.some(s => s.toLowerCase().includes('javascript'))"
+    - type: javascript
+      value: "JSON.parse(output).years_experience >= 0 && JSON.parse(output).years_experience <= 3"
+
+- vars:
+    resume_text: |
+      Alex Chen
+      alex.chen@outlook.com
+      Data Engineer at DataFlow Inc. (3 years). Previously Business Analyst at FinServ Corp (2 years).
+      Skills: Python, SQL, Apache Spark, Airflow, Kafka, Terraform.
+      AWS Certified Solutions Architect.
+    job_description: "Data Engineer with Python, SQL, and distributed computing. Spark and Kafka preferred."
+  assert:
+    - type: is-json
+    - type: javascript
+      value: "JSON.parse(output).skills.some(s => s.toLowerCase().includes('python'))"
+    - type: javascript
+      value: "JSON.parse(output).years_experience >= 3"
