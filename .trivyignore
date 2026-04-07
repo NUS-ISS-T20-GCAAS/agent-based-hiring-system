@@ -1,0 +1,4 @@
+# Trivy CVE Suppressions
+# Add CVE IDs below to suppress known false-positives or accepted-risk vulnerabilities.
+# Format: one CVE per line, e.g., CVE-2023-12345
+# Only add entries after team review and risk acceptance.

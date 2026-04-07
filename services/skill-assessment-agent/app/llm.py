@@ -5,6 +5,7 @@ from typing import Any
 from openai import OpenAI
 
 from app.config import OPENAI_API_KEY, OPENAI_MODEL, OPENAI_TIMEOUT_SEC
+from app.mlflow_tracker import track_llm_call
 
 
 def _extract_json(text: str) -> dict[str, Any]:
@@ -16,6 +17,18 @@ def _extract_json(text: str) -> dict[str, Any]:
 
 
 class SkillAssessmentLLM:
+    _SYSTEM_PROMPT = (
+        "You are a skill assessment agent for a hiring system. "
+        "Assess candidate competencies against a job and return strict JSON only. "
+        "You must evaluate only stated technical and soft-skill evidence from the resume. "
+        "Do not infer protected attributes or culture fit. "
+        "Return exactly these keys: "
+        "skills_score, matched_required_skills, matched_preferred_skills, "
+        "missing_required_skills, missing_preferred_skills, detected_soft_skills, "
+        "matched_soft_skills, missing_soft_skills, strengths, gaps, gap_analysis, confidence. "
+        "All skill arrays must contain lowercase strings. skills_score and confidence must be numbers from 0 to 1."
+    )
+
     def __init__(self) -> None:
         self.enabled = bool(OPENAI_API_KEY)
         self._client = OpenAI(api_key=OPENAI_API_KEY, timeout=OPENAI_TIMEOUT_SEC) if self.enabled else None
@@ -32,24 +45,24 @@ class SkillAssessmentLLM:
             raise RuntimeError("OPENAI_API_KEY is not configured")
 
         requirements = job_requirements or {}
-        response = self._client.responses.create(
+
+        with track_llm_call(
+            agent_name="skill-assessment",
             model=OPENAI_MODEL,
-            instructions=(
-                "You are a skill assessment agent for a hiring system. "
-                "Assess candidate competencies against a job and return strict JSON only. "
-                "You must evaluate only stated technical and soft-skill evidence from the resume. "
-                "Do not infer protected attributes or culture fit. "
-                "Return exactly these keys: "
-                "skills_score, matched_required_skills, matched_preferred_skills, "
-                "missing_required_skills, missing_preferred_skills, detected_soft_skills, "
-                "matched_soft_skills, missing_soft_skills, strengths, gaps, gap_analysis, confidence. "
-                "All skill arrays must contain lowercase strings. skills_score and confidence must be numbers from 0 to 1."
-            ),
-            input=(
-                f"Job description:\n{job_description}\n\n"
-                f"Structured requirements:\n{json.dumps(requirements)}\n\n"
-                f"Parsed resume:\n{json.dumps(parsed_resume)}\n\n"
-                f"Resume text:\n{resume_text}"
-            ),
-        )
-        return _extract_json(response.output_text)
+            prompt_text=self._SYSTEM_PROMPT,
+        ) as tracker:
+            response = self._client.responses.create(
+                model=OPENAI_MODEL,
+                instructions=self._SYSTEM_PROMPT,
+                input=(
+                    f"Job description:\n{job_description}\n\n"
+                    f"Structured requirements:\n{json.dumps(requirements)}\n\n"
+                    f"Parsed resume:\n{json.dumps(parsed_resume)}\n\n"
+                    f"Resume text:\n{resume_text}"
+                ),
+            )
+            result = _extract_json(response.output_text)
+            tracker["confidence"] = result.get("confidence", 0)
+
+        return result
+

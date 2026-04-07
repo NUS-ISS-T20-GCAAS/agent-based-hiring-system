@@ -1,0 +1,44 @@
+# Promptfoo test cases for Skill Assessment Agent
+- vars:
+    parsed_resume: |
+      {"name": "John Smith", "skills": ["python", "django", "postgresql", "aws", "docker"], "years_experience": 7}
+    resume_text: "Senior Software Engineer with 7 years Python, Django, PostgreSQL experience."
+    job_description: "Senior Python Engineer. Required: Python, Django, PostgreSQL. Preferred: AWS, Docker."
+    job_requirements: |
+      {"required_skills": ["python", "django", "postgresql"], "preferred_skills": ["aws", "docker", "kubernetes"]}
+  assert:
+    - type: is-json
+    - type: javascript
+      value: "JSON.parse(output).skills_score >= 0.7"
+    - type: javascript
+      value: "JSON.parse(output).matched_required_skills.length >= 3"
+    - type: javascript
+      value: "JSON.parse(output).confidence >= 0.5 && JSON.parse(output).confidence <= 1.0"
+
+- vars:
+    parsed_resume: |
+      {"name": "Sarah Kim", "skills": ["photoshop", "illustrator", "figma", "sketch"], "years_experience": 4}
+    resume_text: "UI/UX Designer with 4 years experience in Photoshop and Figma."
+    job_description: "Senior Python Engineer. Required: Python, Django, PostgreSQL."
+    job_requirements: |
+      {"required_skills": ["python", "django", "postgresql"], "preferred_skills": ["aws", "docker"]}
+  assert:
+    - type: is-json
+    - type: javascript
+      value: "JSON.parse(output).skills_score < 0.3"
+    - type: javascript
+      value: "JSON.parse(output).missing_required_skills.length >= 2"
+
+- vars:
+    parsed_resume: |
+      {"name": "Alex Chen", "skills": ["python", "sql", "spark", "airflow", "kafka"], "years_experience": 5}
+    resume_text: "Data Engineer, 5 years. Python, SQL, Spark, Airflow, Kafka."
+    job_description: "Senior Python Engineer. Required: Python, Django, PostgreSQL."
+    job_requirements: |
+      {"required_skills": ["python", "django", "postgresql"], "preferred_skills": ["aws", "docker"]}
+  assert:
+    - type: is-json
+    - type: javascript
+      value: "JSON.parse(output).matched_required_skills.some(s => s.includes('python'))"
+    - type: javascript
+      value: "JSON.parse(output).missing_required_skills.length >= 1"

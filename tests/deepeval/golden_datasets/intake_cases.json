@@ -1,0 +1,68 @@
+[
+  {
+    "id": "intake-001",
+    "description": "Senior Python developer with clear skills and experience",
+    "input": {
+      "resume_text": "John Smith\njohn.smith@email.com\n\nSenior Software Engineer with 7 years of experience in Python, Django, and PostgreSQL. Led a team of 5 developers at TechCorp building REST APIs. Proficient in AWS, Docker, and CI/CD pipelines. Bachelor's in Computer Science from NUS.",
+      "resume_url": "uploads/john_smith_resume.pdf",
+      "job_description": "Senior Python Engineer needed for backend API development. Must have 5+ years Python experience, Django expertise, and cloud infrastructure knowledge."
+    },
+    "expected_output": {
+      "name": "John Smith",
+      "email": "john.smith@email.com",
+      "skills": ["python", "django", "postgresql", "aws", "docker", "ci/cd", "rest apis"],
+      "years_experience": 7,
+      "summary": "Senior Software Engineer with 7 years of experience"
+    },
+    "evaluation_criteria": {
+      "must_extract_name": true,
+      "must_extract_email": true,
+      "min_skills_count": 4,
+      "experience_range": [5, 10]
+    }
+  },
+  {
+    "id": "intake-002",
+    "description": "Junior candidate with limited experience",
+    "input": {
+      "resume_text": "Maria Garcia\nmaria.garcia@gmail.com\n\nRecent graduate from NTU with a degree in Information Systems. Completed internship at StartupXYZ working on React frontend. Familiar with JavaScript, HTML, CSS, and basic Python scripting. Looking for entry-level software engineering roles.",
+      "resume_url": "uploads/maria_garcia_resume.docx",
+      "job_description": "Junior Full-Stack Developer. Looking for candidates with knowledge of JavaScript, React, and willingness to learn backend technologies."
+    },
+    "expected_output": {
+      "name": "Maria Garcia",
+      "email": "maria.garcia@gmail.com",
+      "skills": ["javascript", "html", "css", "python", "react"],
+      "years_experience": 1,
+      "summary": "Recent graduate with internship experience"
+    },
+    "evaluation_criteria": {
+      "must_extract_name": true,
+      "must_extract_email": true,
+      "min_skills_count": 3,
+      "experience_range": [0, 2]
+    }
+  },
+  {
+    "id": "intake-003",
+    "description": "Mid-level data engineer with diverse skills",
+    "input": {
+      "resume_text": "Alex Chen\nalex.chen@outlook.com\n\nData Engineer at DataFlow Inc. (3 years). Previously worked as a Business Analyst at FinServ Corp (2 years). Skills include Python, SQL, Apache Spark, Airflow, Kafka, and Terraform. AWS Certified Solutions Architect. Master's in Data Science from SMU.",
+      "resume_url": "uploads/alex_chen_resume.txt",
+      "job_description": "Data Engineer with strong ETL pipeline experience. Must have Python, SQL, and distributed computing experience. Spark and Kafka preferred."
+    },
+    "expected_output": {
+      "name": "Alex Chen",
+      "email": "alex.chen@outlook.com",
+      "skills": ["python", "sql", "apache spark", "airflow", "kafka", "terraform"],
+      "years_experience": 5,
+      "summary": "Data Engineer with 5 years combined experience"
+    },
+    "evaluation_criteria": {
+      "must_extract_name": true,
+      "must_extract_email": true,
+      "min_skills_count": 4,
+      "experience_range": [3, 7]
+    }
+  }
+]

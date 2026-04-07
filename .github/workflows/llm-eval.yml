@@ -1,0 +1,63 @@
+name: LLM Evaluation
+
+on:
+  workflow_call:
+  pull_request:
+    paths:
+      - 'services/*/app/llm.py'
+      - 'services/*/app/worker.py'
+      - 'services/*/app/agent.py'
+      - 'tests/deepeval/**'
+      - 'tests/promptfoo/**'
+  push:
+    paths:
+      - 'services/*/app/llm.py'
+      - 'services/*/app/worker.py'
+      - 'services/*/app/agent.py'
+      - 'tests/deepeval/**'
+      - 'tests/promptfoo/**'
+  workflow_dispatch:
+    inputs:
+      live_api:
+        description: 'Run with live OpenAI API'
+        type: boolean
+        default: true
+
+jobs:
+  deepeval:
+    name: DeepEval LLM Evaluation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r tests/deepeval/requirements.txt
+
+      - name: Run DeepEval tests
+        run: pytest tests/deepeval/ -v --tb=short
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          DEEPEVAL_MODEL: gpt-4o-mini
+
+  promptfoo:
+    name: Promptfoo Regression Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Run Promptfoo evaluation
+        run: npx -y promptfoo@latest eval --config tests/promptfoo/promptfooconfig.yaml --no-cache
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}

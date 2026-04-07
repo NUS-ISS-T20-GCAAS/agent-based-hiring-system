@@ -1,0 +1,74 @@
+[
+  {
+    "id": "skill-001",
+    "description": "Strong skill match — candidate has most required and preferred skills",
+    "input": {
+      "parsed_resume": {
+        "name": "John Smith",
+        "skills": ["python", "django", "postgresql", "aws", "docker", "rest apis"],
+        "years_experience": 7
+      },
+      "resume_text": "Senior Software Engineer with 7 years of experience in Python, Django, and PostgreSQL. Led team of 5 developers building REST APIs. Proficient in AWS and Docker.",
+      "job_description": "Senior Python Engineer. Must have Python, Django, PostgreSQL. Preferred: AWS, Docker, Kubernetes.",
+      "job_requirements": {
+        "required_skills": ["python", "django", "postgresql"],
+        "preferred_skills": ["aws", "docker", "kubernetes"],
+        "soft_skills": ["leadership", "communication"]
+      }
+    },
+    "expected_output": {
+      "skills_score_range": [0.7, 1.0],
+      "must_have_matched_required": ["python", "django", "postgresql"],
+      "must_have_missing_required": [],
+      "confidence_range": [0.7, 1.0]
+    }
+  },
+  {
+    "id": "skill-002",
+    "description": "Partial match — candidate has some required but not all",
+    "input": {
+      "parsed_resume": {
+        "name": "Alex Chen",
+        "skills": ["python", "sql", "spark", "airflow", "kafka"],
+        "years_experience": 5
+      },
+      "resume_text": "Data Engineer at DataFlow Inc. (3 years). Skills include Python, SQL, Apache Spark, Airflow, Kafka.",
+      "job_description": "Senior Python Engineer. Must have Python, Django, PostgreSQL.",
+      "job_requirements": {
+        "required_skills": ["python", "django", "postgresql"],
+        "preferred_skills": ["aws", "docker"],
+        "soft_skills": ["teamwork"]
+      }
+    },
+    "expected_output": {
+      "skills_score_range": [0.2, 0.6],
+      "must_have_matched_required": ["python"],
+      "must_have_missing_required": ["django", "postgresql"],
+      "confidence_range": [0.6, 1.0]
+    }
+  },
+  {
+    "id": "skill-003",
+    "description": "No match — candidate skills are completely unrelated",
+    "input": {
+      "parsed_resume": {
+        "name": "Sarah Kim",
+        "skills": ["photoshop", "illustrator", "figma", "sketch", "ui design"],
+        "years_experience": 4
+      },
+      "resume_text": "UI/UX Designer with 4 years experience. Expert in Photoshop, Illustrator, Figma, and Sketch. Created design systems for mobile apps.",
+      "job_description": "Senior Python Engineer. Must have Python, Django, PostgreSQL. Preferred: AWS, Docker.",
+      "job_requirements": {
+        "required_skills": ["python", "django", "postgresql"],
+        "preferred_skills": ["aws", "docker"],
+        "soft_skills": ["communication"]
+      }
+    },
+    "expected_output": {
+      "skills_score_range": [0.0, 0.2],
+      "must_have_matched_required": [],
+      "must_have_missing_required": ["python", "django", "postgresql"],
+      "confidence_range": [0.7, 1.0]
+    }
+  }
+]

@@ -1,0 +1,90 @@
+[
+  {
+    "id": "audit-001",
+    "description": "Clean audit — no bias flags, balanced selection",
+    "input": {
+      "job_id": "job-test-001",
+      "stats": {
+        "total_candidates": 10,
+        "shortlisted": 4,
+        "rejected": 6,
+        "selection_rate": 0.4
+      },
+      "candidates": [
+        {"id": "c1", "name": "Candidate A", "status": "shortlisted", "qualification_score": 0.85},
+        {"id": "c2", "name": "Candidate B", "status": "shortlisted", "qualification_score": 0.78},
+        {"id": "c3", "name": "Candidate C", "status": "rejected", "qualification_score": 0.35},
+        {"id": "c4", "name": "Candidate D", "status": "shortlisted", "qualification_score": 0.72}
+      ],
+      "decisions": [
+        {"candidate_id": "c1", "recommendation": "SHORTLIST", "confidence": 0.9},
+        {"candidate_id": "c2", "recommendation": "SHORTLIST", "confidence": 0.85},
+        {"candidate_id": "c3", "recommendation": "REJECT", "confidence": 0.92},
+        {"candidate_id": "c4", "recommendation": "SHORTLIST", "confidence": 0.75}
+      ]
+    },
+    "expected_output": {
+      "risk_level": "low",
+      "review_required": false,
+      "bias_flags_empty": true,
+      "confidence_range": [0.6, 1.0]
+    }
+  },
+  {
+    "id": "audit-002",
+    "description": "Low selection rate — should flag bias concern",
+    "input": {
+      "job_id": "job-test-002",
+      "stats": {
+        "total_candidates": 20,
+        "shortlisted": 1,
+        "rejected": 19,
+        "selection_rate": 0.05
+      },
+      "candidates": [
+        {"id": "c1", "name": "Candidate A", "status": "shortlisted", "qualification_score": 0.92},
+        {"id": "c2", "name": "Candidate B", "status": "rejected", "qualification_score": 0.75},
+        {"id": "c3", "name": "Candidate C", "status": "rejected", "qualification_score": 0.68}
+      ],
+      "decisions": [
+        {"candidate_id": "c1", "recommendation": "SHORTLIST", "confidence": 0.95},
+        {"candidate_id": "c2", "recommendation": "REJECT", "confidence": 0.6},
+        {"candidate_id": "c3", "recommendation": "REJECT", "confidence": 0.55}
+      ]
+    },
+    "expected_output": {
+      "risk_level": "high",
+      "review_required": true,
+      "must_have_bias_flag": "low_selection_rate",
+      "confidence_range": [0.5, 1.0]
+    }
+  },
+  {
+    "id": "audit-003",
+    "description": "Mixed signals — some low-confidence decisions warrant review",
+    "input": {
+      "job_id": "job-test-003",
+      "stats": {
+        "total_candidates": 8,
+        "shortlisted": 3,
+        "rejected": 5,
+        "selection_rate": 0.375
+      },
+      "candidates": [
+        {"id": "c1", "name": "Candidate A", "status": "shortlisted", "qualification_score": 0.80},
+        {"id": "c2", "name": "Candidate B", "status": "rejected", "qualification_score": 0.59},
+        {"id": "c3", "name": "Candidate C", "status": "rejected", "qualification_score": 0.58}
+      ],
+      "decisions": [
+        {"candidate_id": "c1", "recommendation": "SHORTLIST", "confidence": 0.88},
+        {"candidate_id": "c2", "recommendation": "REJECT", "confidence": 0.52},
+        {"candidate_id": "c3", "recommendation": "REJECT", "confidence": 0.48}
+      ]
+    },
+    "expected_output": {
+      "risk_level_options": ["medium", "high"],
+      "review_required": true,
+      "confidence_range": [0.5, 1.0]
+    }
+  }
+]

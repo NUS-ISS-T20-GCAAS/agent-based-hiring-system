@@ -35,10 +35,15 @@ jobs:
     uses: ./.github/workflows/build.yml
     secrets: inherit
 
-  # 2. Deploy Job
+  # 2. LLM Evaluation Gate (mandatory)
+  llm-eval:
+    uses: ./.github/workflows/llm-eval.yml
+    secrets: inherit
+
+  # 3. Deploy Job (requires both build + llm-eval to pass)
   deploy:
-    if: ${{ always() && (needs.build.result == 'success' || needs.build.result == 'failure') && github.event_name != 'pull_request' }}
-    needs: build
+    if: ${{ always() && (needs.build.result == 'success' || needs.build.result == 'failure') && needs.llm-eval.result == 'success' && github.event_name != 'pull_request' }}
+    needs: [build, llm-eval]
     runs-on: ubuntu-latest
     environment:
       name: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.environment || 'dev' }}

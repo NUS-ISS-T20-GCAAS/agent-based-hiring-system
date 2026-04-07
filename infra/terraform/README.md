@@ -54,6 +54,7 @@ graph LR
 
     Internet((Internet))
     ECR["ECR<br/>(7 repositories)"]
+    OpenAI(("OpenAI API"))
 
     subgraph VPC["VPC — 10.0.0.0/16"]
         subgraph PubSub["Public Subnets (10.0.1.0/24, 10.0.2.0/24)"]
@@ -100,6 +101,7 @@ graph LR
     
     PrivSub --> NAT --> IGW
     EKS -.-> ECR
+    EKS -.-> OpenAI
 ```
 
 | Component | Details |
