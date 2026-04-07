@@ -42,7 +42,8 @@ These pipelines operate using Terraform to shape the EKS clusters, NAT gateways,
 ### 3. Reusable Workflows & Testing
 
 *   **`build.yml` / `frontend-build.yml`**
-    *   Modular scripts explicitly designed to just execute `docker build` & `docker push` up to GHCR. 
+    *   `build.yml` executes per-service Python unit tests (`services/<agent>/tests`) before `docker build` and pushes only test-passing images to GHCR.
+    *   `frontend-build.yml` builds and pushes the frontend image to GHCR.
 *   **`llm-eval.yml` (Prompt and Quality Evaluation)**
     *   **Trigger:** Code changes inside the intelligent service implementations (e.g., `app/llm.py`).
     *   **Process:** Runs `DeepEval` and `Promptfoo` frameworks evaluating precision and hallucinations across LLM modifications recursively against OpenAI API test beds before merging. 
