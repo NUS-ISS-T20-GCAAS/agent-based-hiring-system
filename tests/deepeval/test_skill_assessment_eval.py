@@ -2,73 +2,30 @@
 DeepEval tests for the Skill Assessment Agent.
 
 Evaluates:
-- Hallucination: gap analysis must not reference skills absent from inputs
 - Answer Relevancy: matched/missing skills must align with source data
 - Schema: required output fields are present and well-typed
+
+NOTE: HallucinationMetric is intentionally NOT used for the skill assessment agent.
+  DeepEval's HallucinationMetric (with an LLM judge) treats omissions as
+  contradictions — correct for RAG, but wrong for structured extraction/categorisation.
+  The skill assessment agent's hallucination risks are already fully covered by
+  the deterministic tests in TestSkillAssessmentSchema:
+    - test_matched_skills_are_subset_of_resume → matched skills must exist in the resume
+    - test_missing_skills_not_in_resume → "missing" skills must NOT exist in the resume
+    - test_score_ranges_valid → skills_score ranges are within [0, 1]
 """
 
 import json
 
 import pytest
 from deepeval import assert_test
-from deepeval.metrics import (
-    AnswerRelevancyMetric,
-    HallucinationMetric,
-)
+from deepeval.metrics import AnswerRelevancyMetric
 from deepeval.test_case import LLMTestCase
 
 from .conftest import (
     DEEPEVAL_MODEL,
-    HALLUCINATION_THRESHOLD,
     RELEVANCY_THRESHOLD,
 )
-
-
-class TestSkillAssessmentHallucination:
-    """Verify gap analysis does not fabricate skills not in the source data."""
-
-    @pytest.fixture(autouse=True)
-    def _load_cases(self, skill_assessment_cases):
-        self.cases = skill_assessment_cases
-
-    def test_no_hallucination(self):
-        """Gap analysis skills must exist in either the resume or job requirements."""
-        for case in self.cases:
-            inp = case["input"]
-            expected = case["expected_output"]
-
-            # Build context from all source data
-            context = [
-                f"Resume skills: {', '.join(inp['parsed_resume']['skills'])}",
-                f"Required skills: {', '.join(inp['job_requirements']['required_skills'])}",
-                f"Preferred skills: {', '.join(inp['job_requirements']['preferred_skills'])}",
-                f"Resume text: {inp['resume_text']}",
-            ]
-
-            # Simulated agent output referencing matched/missing skills
-            matched_req = expected.get("must_have_matched_required", [])
-            missing_req = expected.get("must_have_missing_required", [])
-            actual_output = json.dumps({
-                "matched_required_skills": matched_req,
-                "missing_required_skills": missing_req,
-                "gap_analysis": (
-                    f"Candidate matches {len(matched_req)} required skills "
-                    f"and is missing {len(missing_req)} required skills."
-                ),
-            })
-
-            test_case = LLMTestCase(
-                input=inp["job_description"],
-                actual_output=actual_output,
-                context=context,
-            )
-
-            metric = HallucinationMetric(
-                threshold=HALLUCINATION_THRESHOLD,
-                model=DEEPEVAL_MODEL,
-            )
-
-            assert_test(test_case, [metric])
 
 
 class TestSkillAssessmentRelevancy:
