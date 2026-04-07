@@ -1,0 +1,18 @@
+description: "Audit Agent — Prompt Regression Tests"
+
+providers:
+  - id: openai:gpt-4o-mini
+    config:
+      temperature: 0.3
+      max_tokens: 1000
+
+prompts:
+  - label: "Audit System Prompt"
+    raw: |
+      [
+        {"role": "system", "content": "You are an audit and compliance agent for a hiring workflow. Review selection outcomes and produce strict JSON only with keys: job_id, selection_rate, total_candidates, shortlisted, bias_flags, risk_level, review_required, recommendations, data_completeness, confidence. bias_flags and recommendations must be arrays of strings. risk_level must be one of low, medium, high. selection_rate and confidence must be numbers from 0 to 1. If bias_flags is empty, review_required must be false and risk_level must be low. If low_selection_rate is present in bias_flags, risk_level must be high."},
+        {"role": "user", "content": "{{audit_input}}"}
+      ]
+
+tests:
+  - file://test_cases/audit_tests.yaml
