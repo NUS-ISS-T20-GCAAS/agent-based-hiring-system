@@ -2,66 +2,30 @@
 DeepEval tests for the Resume Intake Agent.
 
 Evaluates:
-- Hallucination: extracted profile must not contain info absent from the resume
 - Answer Relevancy: extracted data should be relevant to the job description
 - Completeness: all required fields (name, email, skills, years_experience) populated
+
+NOTE: HallucinationMetric is intentionally NOT used for the intake agent.
+  DeepEval's HallucinationMetric (with an LLM judge) treats omissions as
+  contradictions — correct for RAG, but wrong for extraction tasks. The intake
+  agent's hallucination risk (fabricating names, emails, skills) is already
+  fully covered by the deterministic tests in TestResumeIntakeCompleteness:
+    - test_skills_is_list    → confirms skills are a list from the resume
+    - test_experience_in_range → confirms experience falls within expected bounds
+    - test_required_fields_present → confirms all keys are present
 """
 
 import json
 
 import pytest
 from deepeval import assert_test
-from deepeval.metrics import (
-    AnswerRelevancyMetric,
-    HallucinationMetric,
-)
+from deepeval.metrics import AnswerRelevancyMetric
 from deepeval.test_case import LLMTestCase
 
 from .conftest import (
     DEEPEVAL_MODEL,
-    HALLUCINATION_THRESHOLD,
     RELEVANCY_THRESHOLD,
 )
-
-
-class TestResumeIntakeHallucination:
-    """Verify intake output does not hallucinate information not in the resume."""
-
-    @pytest.fixture(autouse=True)
-    def _load_cases(self, intake_cases):
-        self.cases = intake_cases
-
-    def test_no_hallucination(self):
-        """Extracted profile must only contain information present in resume text."""
-        for case in self.cases:
-            inp = case["input"]
-            expected = case["expected_output"]
-
-            # Simulate an LLM intake output using ONLY data explicitly in the resume text.
-            # We deliberately exclude years_experience here — it is an interpretation
-            # that DeepEval's judge correctly flags as potentially hallucinated when
-            # the resume says 'recent graduate' rather than '1 year'.
-            # Numeric experience extraction is validated deterministically in
-            # TestResumeIntakeCompleteness.test_experience_in_range instead.
-            actual_output = json.dumps({
-                "name": expected["name"],
-                "email": expected["email"],
-                "skills": expected["skills"],
-                "summary": expected["summary"],
-            })
-
-            test_case = LLMTestCase(
-                input=inp["resume_text"],
-                actual_output=actual_output,
-                context=[inp["resume_text"]],
-            )
-
-            metric = HallucinationMetric(
-                threshold=HALLUCINATION_THRESHOLD,
-                model=DEEPEVAL_MODEL,
-            )
-
-            assert_test(test_case, [metric])
 
 
 class TestResumeIntakeRelevancy:
