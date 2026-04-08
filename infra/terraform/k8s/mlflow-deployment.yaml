@@ -1,0 +1,135 @@
+# ──────────────────────────────────────────────
+# MLflow — ServiceAccount, Deployment, Service, Ingress
+# Runs on Fargate (services namespace)
+# ──────────────────────────────────────────────
+# Prerequisites — run `terraform apply` first, then replace:
+#   <MLFLOW_IRSA_ROLE_ARN>   →  terraform output mlflow_irsa_role_arn
+#   <MLFLOW_S3_BUCKET>       →  terraform output mlflow_s3_bucket
+#   <ACM_CERTIFICATE_ARN>    →  terraform output acm_certificate_arn
+#   <PUBLIC_SUBNET_IDS>      →  terraform output public_subnet_ids (comma-separated)
+# ──────────────────────────────────────────────
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: mlflow
+  namespace: services
+  annotations:
+    # IRSA: grants the pod S3 write access without static credentials
+    eks.amazonaws.com/role-arn: <MLFLOW_IRSA_ROLE_ARN>
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mlflow
+  namespace: services
+  labels:
+    app: mlflow
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mlflow
+  template:
+    metadata:
+      labels:
+        app: mlflow
+    spec:
+      serviceAccountName: mlflow
+      containers:
+        - name: mlflow
+          image: ghcr.io/mlflow/mlflow:v2.16.0
+          # Shell substitution expands DB_HOST / DB_USER / DB_PASSWORD env vars
+          # from the hiring-system-secrets K8s Secret at runtime.
+          command:
+            - /bin/sh
+            - -c
+            - |
+              mlflow server \
+                --host 0.0.0.0 \
+                --port 5000 \
+                --backend-store-uri "postgresql://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:5432/hiring_system" \
+                --default-artifact-root "s3://<MLFLOW_S3_BUCKET>/"
+          env:
+            - name: DB_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: hiring-system-secrets
+                  key: db-host
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: hiring-system-secrets
+                  key: db-username
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: hiring-system-secrets
+                  key: db-password
+          ports:
+            - containerPort: 5000
+              name: http
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 20
+            periodSeconds: 30
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mlflow
+  namespace: services
+  labels:
+    app: mlflow
+spec:
+  type: ClusterIP
+  selector:
+    app: mlflow
+  ports:
+    - port: 5000
+      targetPort: 5000
+      protocol: TCP
+      name: http
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: mlflow-ingress
+  namespace: services
+  annotations:
+    kubernetes.io/ingress.class: alb
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/certificate-arn: <ACM_CERTIFICATE_ARN>
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
+    alb.ingress.kubernetes.io/ssl-redirect: "443"
+    alb.ingress.kubernetes.io/healthcheck-path: /health
+    alb.ingress.kubernetes.io/subnets: <PUBLIC_SUBNET_IDS>
+spec:
+  rules:
+    - host: mlflow.sentinelrecruit.me
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: mlflow
+                port:
+                  number: 5000

@@ -55,6 +55,8 @@ spec:
               value: "redis://redis:6379/0"
             - name: CELERY_RESULT_BACKEND
               value: "redis://redis:6379/0"
+            - name: MLFLOW_TRACKING_URI
+              value: "http://mlflow:5000"
           resources:
             requests:
               cpu: 250m

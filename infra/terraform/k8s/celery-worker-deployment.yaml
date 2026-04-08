@@ -64,6 +64,8 @@ spec:
                 secretKeyRef:
                   name: hiring-system-secrets
                   key: db-password
+            - name: MLFLOW_TRACKING_URI
+              value: "http://mlflow:5000"
           resources:
             requests:
               cpu: 250m
