@@ -220,6 +220,7 @@ jobs:
           AUDIT_TAG=$(kubectl get deployment audit-agent -n services -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null | awk -F: '{print $NF}')
           RANKING_TAG=$(kubectl get deployment ranking-agent -n services -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null | awk -F: '{print $NF}')
           SKILL_TAG=$(kubectl get deployment skill-assessment-agent -n services -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null | awk -F: '{print $NF}')
+          MLFLOW_TAG=$(kubectl get deployment mlflow -n services -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null | awk -F: '{print $NF}')
 
           FE_TAG=${FE_TAG:-latest}
           COORD_TAG=${COORD_TAG:-latest}
@@ -228,6 +229,7 @@ jobs:
           AUDIT_TAG=${AUDIT_TAG:-latest}
           RANKING_TAG=${RANKING_TAG:-latest}
           SKILL_TAG=${SKILL_TAG:-latest}
+          MLFLOW_TAG=${MLFLOW_TAG:-latest}
 
           echo "Image tags:"
           echo "  frontend:            $FE_TAG"
@@ -237,6 +239,7 @@ jobs:
           echo "  audit-agent:         $AUDIT_TAG"
           echo "  ranking-agent:       $RANKING_TAG"
           echo "  skill-assessment-agent: $SKILL_TAG"
+          echo "  mlflow:              $MLFLOW_TAG"
 
           # Replace account and region in all deployment files
           for file in ${{ env.TF_DIR }}/k8s/*-deployment.yaml; do
@@ -258,6 +261,7 @@ jobs:
           sed -i "s/<IMAGE_TAG>/$AUDIT_TAG/g" ${{ env.TF_DIR }}/k8s/audit-agent-deployment.yaml 2>/dev/null || true
           sed -i "s/<IMAGE_TAG>/$RANKING_TAG/g" ${{ env.TF_DIR }}/k8s/ranking-agent-deployment.yaml 2>/dev/null || true
           sed -i "s/<IMAGE_TAG>/$SKILL_TAG/g" ${{ env.TF_DIR }}/k8s/skill-assessment-agent-deployment.yaml 2>/dev/null || true
+          sed -i "s/<IMAGE_TAG>/$MLFLOW_TAG/g" ${{ env.TF_DIR }}/k8s/mlflow-deployment.yaml 2>/dev/null || true
 
           sed -i "s|<MLFLOW_IRSA_ROLE_ARN>|${{ steps.tf-outputs.outputs.mlflow_irsa }}|g" ${{ env.TF_DIR }}/k8s/mlflow-deployment.yaml 2>/dev/null || true
           sed -i "s|<MLFLOW_S3_BUCKET>|${{ steps.tf-outputs.outputs.mlflow_s3 }}|g" ${{ env.TF_DIR }}/k8s/mlflow-deployment.yaml 2>/dev/null || true

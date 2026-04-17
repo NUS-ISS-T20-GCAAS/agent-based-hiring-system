@@ -37,7 +37,8 @@ spec:
       serviceAccountName: mlflow
       containers:
         - name: mlflow
-          image: ghcr.io/mlflow/mlflow:v2.16.0
+          # Replace <ACCOUNT_ID> and <REGION> after terraform apply
+          image: <ACCOUNT_ID>.dkr.ecr.<REGION>.amazonaws.com/hiring-system/mlflow:<IMAGE_TAG>
           # Shell substitution expands DB_HOST / DB_USER / DB_PASSWORD env vars
           # from the hiring-system-secrets K8s Secret at runtime.
           command:

@@ -168,7 +168,7 @@ jobs:
           
           for SERVICE in "${SUCCESS_SERVICES[@]}"; do
             file="${{ env.TF_DIR }}/k8s/${SERVICE}-deployment.yaml"
-            if [ -f "$file" ]; then
+            if [ -f "$file" ] && [ "$SERVICE" != "mlflow" ]; then
               echo "Processing $file..."
               sed -i "s/<ACCOUNT_ID>/$ACCOUNT_ID/g" "$file"
               sed -i "s/<REGION>/$REGION/g" "$file"
@@ -185,8 +185,17 @@ jobs:
           done
 
       - name: Deploy MLflow
+        if: contains(steps.parse-success.outputs.services, 'mlflow')
         run: |
           FILE="${{ env.TF_DIR }}/k8s/mlflow-deployment.yaml"
+          
+          ACCOUNT_ID="${{ steps.tf-outputs.outputs.account_id }}"
+          REGION="${{ env.AWS_REGION }}"
+          
+          sed -i "s/<ACCOUNT_ID>/$ACCOUNT_ID/g" "$FILE"
+          sed -i "s/<REGION>/$REGION/g" "$FILE"
+          sed -i "s/<IMAGE_TAG>/${IMAGE_TAG}/g" "$FILE"
+          sed -i "s/:latest/:${IMAGE_TAG}/g" "$FILE"
           
           sed -i "s|<MLFLOW_IRSA_ROLE_ARN>|${{ steps.tf-outputs.outputs.mlflow_irsa }}|g" "$FILE"
           sed -i "s|<MLFLOW_S3_BUCKET>|${{ steps.tf-outputs.outputs.mlflow_s3 }}|g" "$FILE"

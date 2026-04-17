@@ -106,6 +106,7 @@ jobs:
             AUDIT_TAG=$(kubectl get deployment audit-agent -n services -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null | awk -F: '{print $NF}' || echo "latest")
             RANKING_TAG=$(kubectl get deployment ranking-agent -n services -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null | awk -F: '{print $NF}' || echo "latest")
             SKILL_TAG=$(kubectl get deployment skill-assessment-agent -n services -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null | awk -F: '{print $NF}' || echo "latest")
+            MLFLOW_TAG=$(kubectl get deployment mlflow -n services -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null | awk -F: '{print $NF}' || echo "latest")
 
             # Default empty values to 'latest'
             FE_TAG=${FE_TAG:-latest}
@@ -115,6 +116,7 @@ jobs:
             AUDIT_TAG=${AUDIT_TAG:-latest}
             RANKING_TAG=${RANKING_TAG:-latest}
             SKILL_TAG=${SKILL_TAG:-latest}
+            MLFLOW_TAG=${MLFLOW_TAG:-latest}
 
             echo "  frontend:            $FE_TAG"
             echo "  coordinator-agent:   $COORD_TAG"
@@ -123,9 +125,10 @@ jobs:
             echo "  audit-agent:         $AUDIT_TAG"
             echo "  ranking-agent:       $RANKING_TAG"
             echo "  skill-assessment-agent: $SKILL_TAG"
+            echo "  mlflow:              $MLFLOW_TAG"
 
             cat > image-tags.json <<EOF
-          {"frontend":"$FE_TAG","coordinator-agent":"$COORD_TAG","resume-intake-agent":"$RESUME_TAG","screening-agent":"$SCREEN_TAG","audit-agent":"$AUDIT_TAG","ranking-agent":"$RANKING_TAG","skill-assessment-agent":"$SKILL_TAG"}
+          {"frontend":"$FE_TAG","coordinator-agent":"$COORD_TAG","resume-intake-agent":"$RESUME_TAG","screening-agent":"$SCREEN_TAG","audit-agent":"$AUDIT_TAG","ranking-agent":"$RANKING_TAG","skill-assessment-agent":"$SKILL_TAG","mlflow":"$MLFLOW_TAG"}
           EOF
           fi
 
@@ -516,6 +519,7 @@ jobs:
             AUDIT_TAG=$(cat ${{ env.TF_DIR }}/image-tags.json | python3 -c "import sys,json; print(json.load(sys.stdin).get('audit-agent', 'latest'))")
             RANKING_TAG=$(cat ${{ env.TF_DIR }}/image-tags.json | python3 -c "import sys,json; print(json.load(sys.stdin).get('ranking-agent', 'latest'))")
             SKILL_TAG=$(cat ${{ env.TF_DIR }}/image-tags.json | python3 -c "import sys,json; print(json.load(sys.stdin).get('skill-assessment-agent', 'latest'))")
+            MLFLOW_TAG=$(cat ${{ env.TF_DIR }}/image-tags.json | python3 -c "import sys,json; print(json.load(sys.stdin).get('mlflow', 'latest'))")
           else
             echo "⚠️ No saved image tags found. Using 'latest' as fallback."
             FE_TAG="latest"
@@ -525,6 +529,7 @@ jobs:
             AUDIT_TAG="latest"
             RANKING_TAG="latest"
             SKILL_TAG="latest"
+            MLFLOW_TAG="latest"
           fi
           echo "frontend_tag=$FE_TAG" >> "$GITHUB_OUTPUT"
           echo "coordinator_tag=$COORD_TAG" >> "$GITHUB_OUTPUT"
@@ -533,6 +538,7 @@ jobs:
           echo "audit_tag=$AUDIT_TAG" >> "$GITHUB_OUTPUT"
           echo "ranking_tag=$RANKING_TAG" >> "$GITHUB_OUTPUT"
           echo "skill_tag=$SKILL_TAG" >> "$GITHUB_OUTPUT"
+          echo "mlflow_tag=$MLFLOW_TAG" >> "$GITHUB_OUTPUT"
           echo ""
           echo "Image tags to deploy:"
           echo "  frontend:            $FE_TAG"
@@ -542,6 +548,7 @@ jobs:
           echo "  audit-agent:         $AUDIT_TAG"
           echo "  ranking-agent:       $RANKING_TAG"
           echo "  skill-assessment-agent: $SKILL_TAG"
+          echo "  mlflow:              $MLFLOW_TAG"
 
       - name: Replace Placeholders in K8s Manifests
         run: |
@@ -568,6 +575,7 @@ jobs:
           sed -i "s/<IMAGE_TAG>/${{ steps.image-tags.outputs.audit_tag }}/g" ${{ env.TF_DIR }}/k8s/audit-agent-deployment.yaml 2>/dev/null || true
           sed -i "s/<IMAGE_TAG>/${{ steps.image-tags.outputs.ranking_tag }}/g" ${{ env.TF_DIR }}/k8s/ranking-agent-deployment.yaml 2>/dev/null || true
           sed -i "s/<IMAGE_TAG>/${{ steps.image-tags.outputs.skill_tag }}/g" ${{ env.TF_DIR }}/k8s/skill-assessment-agent-deployment.yaml 2>/dev/null || true
+          sed -i "s/<IMAGE_TAG>/${{ steps.image-tags.outputs.mlflow_tag }}/g" ${{ env.TF_DIR }}/k8s/mlflow-deployment.yaml 2>/dev/null || true
           sed -i "s/<IMAGE_TAG>/${{ steps.image-tags.outputs.coordinator_tag }}/g" ${{ env.TF_DIR }}/k8s/celery-worker-deployment.yaml
 
           sed -i "s|<MLFLOW_IRSA_ROLE_ARN>|${{ steps.tf-outputs.outputs.mlflow_irsa }}|g" ${{ env.TF_DIR }}/k8s/mlflow-deployment.yaml 2>/dev/null || true

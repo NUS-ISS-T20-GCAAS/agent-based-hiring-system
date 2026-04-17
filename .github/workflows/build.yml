@@ -36,6 +36,8 @@ jobs:
               - 'services/ranking-agent/**'
             audit-agent:
               - 'services/audit-agent/**'
+            mlflow:
+              - 'services/mlflow/**'
 
       # Decide final service list (SINGLE source of truth)
       - name: Set services list
@@ -48,7 +50,7 @@ jobs:
           if [ -n "$SERVICES" ]; then
             # Case 1: Manual Input (Single service, Comma list, or "all")
             if [ "$SERVICES" = "all" ]; then
-              SERVICES="coordinator-agent,resume-intake-agent,screening-agent,skill-assessment-agent,ranking-agent,audit-agent"
+              SERVICES="coordinator-agent,resume-intake-agent,screening-agent,skill-assessment-agent,ranking-agent,audit-agent,mlflow"
             fi
             echo "Using manual service list: $SERVICES"
           else
@@ -61,6 +63,7 @@ jobs:
             [[ "${{ steps.filter.outputs.skill-assessment-agent }}" == "true" ]] && S_LIST+=("skill-assessment-agent")
             [[ "${{ steps.filter.outputs.ranking-agent }}" == "true" ]] && S_LIST+=("ranking-agent")
             [[ "${{ steps.filter.outputs.audit-agent }}" == "true" ]] && S_LIST+=("audit-agent")
+            [[ "${{ steps.filter.outputs.mlflow }}" == "true" ]] && S_LIST+=("mlflow")
             
             # Combine into a comma-separated list
             SERVICES=$(IFS=,; echo "${S_LIST[*]}")
