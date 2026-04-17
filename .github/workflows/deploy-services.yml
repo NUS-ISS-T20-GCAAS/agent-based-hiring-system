@@ -33,6 +33,8 @@ jobs:
   # 1. Reusable Build Job
   build:
     uses: ./.github/workflows/build.yml
+    with:
+      services: ${{ github.event_name == 'workflow_dispatch' && 'all' || '' }}
     secrets: inherit
 
   # 2. LLM Evaluation Gate (mandatory)
@@ -175,6 +177,7 @@ jobs:
           done
 
       - name: Deploy Celery Worker
+        if: contains(steps.parse-success.outputs.services, 'coordinator-agent')
         run: |
           ACCOUNT_ID="${{ steps.tf-outputs.outputs.account_id }}"
           REGION="${{ env.AWS_REGION }}"
