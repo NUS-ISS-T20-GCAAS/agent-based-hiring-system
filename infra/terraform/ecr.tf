@@ -11,7 +11,7 @@ locals {
     "skill-assessment-agent",
     "ranking-agent",
     "audit-agent",
-    "skill-assessment-agent"
+    "mlflow"
   ]
 }
 
