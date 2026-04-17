@@ -170,6 +170,8 @@ jobs:
           ACM_ARN=$(terraform output -raw acm_certificate_arn 2>/dev/null || echo "")
           ALB_ROLE_ARN=$(terraform output -raw alb_controller_role_arn)
           SUBNETS=$(terraform output -json public_subnet_ids | jq -r 'join(",")')
+          MLFLOW_S3=$(terraform output -raw mlflow_s3_bucket 2>/dev/null || echo "")
+          MLFLOW_IRSA=$(terraform output -raw mlflow_irsa_role_arn 2>/dev/null || echo "")
 
           echo "eks_cluster=$EKS_CLUSTER" >> "$GITHUB_OUTPUT"
           echo "rds_host=$RDS_HOST" >> "$GITHUB_OUTPUT"
@@ -177,6 +179,8 @@ jobs:
           echo "acm_arn=$ACM_ARN" >> "$GITHUB_OUTPUT"
           echo "alb_role_arn=$ALB_ROLE_ARN" >> "$GITHUB_OUTPUT"
           echo "subnets=$SUBNETS" >> "$GITHUB_OUTPUT"
+          echo "mlflow_s3=$MLFLOW_S3" >> "$GITHUB_OUTPUT"
+          echo "mlflow_irsa=$MLFLOW_IRSA" >> "$GITHUB_OUTPUT"
         working-directory: ${{ env.TF_DIR }}
 
       - name: Configure kubectl
@@ -255,6 +259,11 @@ jobs:
           sed -i "s/<IMAGE_TAG>/$RANKING_TAG/g" ${{ env.TF_DIR }}/k8s/ranking-agent-deployment.yaml 2>/dev/null || true
           sed -i "s/<IMAGE_TAG>/$SKILL_TAG/g" ${{ env.TF_DIR }}/k8s/skill-assessment-agent-deployment.yaml 2>/dev/null || true
 
+          sed -i "s|<MLFLOW_IRSA_ROLE_ARN>|${{ steps.tf-outputs.outputs.mlflow_irsa }}|g" ${{ env.TF_DIR }}/k8s/mlflow-deployment.yaml 2>/dev/null || true
+          sed -i "s|<MLFLOW_S3_BUCKET>|${{ steps.tf-outputs.outputs.mlflow_s3 }}|g" ${{ env.TF_DIR }}/k8s/mlflow-deployment.yaml 2>/dev/null || true
+          sed -i "s|<ACM_CERTIFICATE_ARN>|${{ steps.tf-outputs.outputs.acm_arn }}|g" ${{ env.TF_DIR }}/k8s/mlflow-deployment.yaml 2>/dev/null || true
+          sed -i "s|<PUBLIC_SUBNET_IDS>|${{ steps.tf-outputs.outputs.subnets }}|g" ${{ env.TF_DIR }}/k8s/mlflow-deployment.yaml 2>/dev/null || true
+
           echo ""
           echo "Final image references:"
           grep -h "image:" ${{ env.TF_DIR }}/k8s/*-deployment.yaml || true
@@ -299,6 +308,7 @@ jobs:
           kubectl apply -f ${{ env.TF_DIR }}/k8s/audit-agent-deployment.yaml 2>/dev/null || true
           kubectl apply -f ${{ env.TF_DIR }}/k8s/ranking-agent-deployment.yaml 2>/dev/null || true
           kubectl apply -f ${{ env.TF_DIR }}/k8s/skill-assessment-agent-deployment.yaml 2>/dev/null || true
+          kubectl apply -f ${{ env.TF_DIR }}/k8s/mlflow-deployment.yaml 2>/dev/null || true
 
       - name: Verify Deployment
         run: |
