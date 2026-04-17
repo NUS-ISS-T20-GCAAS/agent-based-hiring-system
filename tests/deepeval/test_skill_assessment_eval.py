@@ -51,11 +51,9 @@ class TestSkillAssessmentRelevancy:
             missing_str = ", ".join(missing) if missing else "none"
             required_str = ", ".join(required)
             actual_output = (
-                f"For the position requiring {required_str}: "
-                f"the candidate has matched the following required skills: {matched_str}. "
-                f"The following required skills are absent from the candidate's profile: {missing_str}. "
-                f"This assessment is based solely on the candidate's stated technical skills "
-                f"against the job's mandatory requirements."
+                f"Required skills for this role: {required_str}. "
+                f"Required skills found in the candidate profile: {matched_str}. "
+                f"Required skills not found in the candidate profile: {missing_str}."
             )
 
             test_case = LLMTestCase(
