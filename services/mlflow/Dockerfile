@@ -1,4 +1,4 @@
-FROM ghcr.io/mlflow/mlflow:v2.16.0
+FROM ghcr.io/mlflow/mlflow:v3.11.1
 
 USER root
 
