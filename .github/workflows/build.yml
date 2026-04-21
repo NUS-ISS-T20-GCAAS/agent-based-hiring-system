@@ -99,6 +99,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: SAST Scan with Semgrep
+        uses: returntocorp/semgrep-action@v1
+        with:
+          config: p/python
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:

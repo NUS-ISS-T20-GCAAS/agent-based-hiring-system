@@ -21,6 +21,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: SAST Scan with Semgrep
+        uses: returntocorp/semgrep-action@v1
+        with:
+          config: p/javascript
+
       - name: Set lowercase repository name
         run: |
           echo "REPO_LOWER=$(echo ${{ github.repository }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
@@ -28,6 +33,10 @@ jobs:
       - name: Install deps
         working-directory: frontend
         run: npm ci
+
+      - name: Run unit tests
+        working-directory: frontend
+        run: npm test
 
       - name: Build
         working-directory: frontend
@@ -39,6 +48,15 @@ jobs:
             --build-arg VITE_WS_URL="${{ inputs.vite_ws_url }}" \
             -t ghcr.io/${{ env.REPO_LOWER }}/frontend:${{ inputs.image_tag }} \
             frontend
+
+      - name: Scan Docker image with Trivy
+        uses: aquasecurity/trivy-action@0.35.0
+        with:
+          image-ref: ghcr.io/${{ env.REPO_LOWER }}/frontend:${{ inputs.image_tag }}
+          format: 'table'
+          exit-code: '1'
+          severity: 'CRITICAL'
+          ignore-unfixed: true
 
       - name: Push
         run: |
